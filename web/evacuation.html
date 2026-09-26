@@ -3,24 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#19191c" />
     <title>Gunn Evacuation Routes</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/evacuation.js"></script>
   </head>
   <body>
-    <header class="site-header">
-      <div class="brand-mark">G</div>
-      <div>
-        <div class="eyebrow">GUNN CAMPUS MAP</div>
-        <h1>Evacuation Routes</h1>
-      </div>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <aside class="site-sidebar" aria-label="GunnMap navigation">
+      <a class="brand" href="/" aria-label="GunnMap home">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg></span>
+        <span class="brand-name">Gunn<span>Map</span></span>
+      </a>
+      <p class="brand-caption">A little direction for your day.</p>
+      <div class="nav-label">EXPLORE CAMPUS</div>
       <nav class="site-nav" aria-label="Campus maps">
-        <a href="/">Schedule Map</a>
-        <a href="/evacuation" aria-current="page">Evacuation Routes</a>
+        <a href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg><span>Schedule Map</span></a>
+        <a href="/evacuation" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M8 5h8a4 4 0 0 1 0 8H8a4 4 0 0 0 0 8h8"/></svg><span>Evacuation Routes</span></a>
       </nav>
+      <div class="sidebar-note"><span class="campus-dot" aria-hidden="true"></span>Made for Gunn students<p>Your campus. Your way.</p></div>
+    </aside>
+    <div class="app-content">
+    <header class="page-intro">
+      <svg class="hero-waves" viewBox="0 0 1400 260" preserveAspectRatio="none" aria-hidden="true"><path fill="#ffffff09" d="M0 80C300 210 550 30 800 100s350 90 600-20V0H0Z"/><path fill="#15151b24" d="M0 160c230 50 390-30 610-10s430 130 790-45v155H0Z"/><path fill="#232325" d="M0 230c310-65 450 60 710 0s420-5 690 0v30H0Z"/></svg>
+      <div class="intro-copy"><div class="eyebrow">GUNN HIGH SCHOOL <span aria-hidden="true">/</span> CAMPUS REFERENCE</div>
+        <h1>Find your assembly area.</h1>
+        <p>Keep the campus evacuation map close at hand.</p>
+      </div>
+      <div class="intro-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M8 5h8a4 4 0 0 1 0 8H8a4 4 0 0 0 0 8h8"/></svg><span>Know the route.<br><strong>Stay together.</strong></span></div>
     </header>
 
-    <main class="evacuation-layout">
+    <main id="main-content" class="evacuation-layout">
       <p class="reference-notice"><strong>Reference map.</strong> Follow current school staff instructions during an emergency. This supplied image does not show a revision date.</p>
 
       <section class="panel evacuation-panel" aria-labelledby="evacuation-title">
@@ -94,5 +107,7 @@
         </div>
       </section>
     </main>
+    <footer class="site-footer"><span>GunnMap <span aria-hidden="true">·</span> Henry M. Gunn High School</span><span>Unofficial student resource</span></footer>
+    </div>
   </body>
 </html>

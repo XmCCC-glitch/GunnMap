@@ -447,10 +447,11 @@ function createPeriod(number: number) {
   const card = document.createElement("div");
   card.className = "period-card";
   card.dataset.period = String(number);
+  card.style.setProperty("--period-accent", PERIOD_COLORS[number - 1]);
   card.innerHTML = `
     <div class="period-number"><span>PERIOD</span><strong>${number}</strong></div>
-    <label class="field field-building"><span>Building</span><select aria-label="Period ${number} building"><option value="">Auto-detect from room</option></select></label>
     <label class="field field-room"><span>Room</span><input type="text" list="rooms-${number}" placeholder="e.g. N211" autocomplete="off" aria-label="Period ${number} room"><datalist id="rooms-${number}"></datalist></label>
+    <label class="field field-building"><span>Building</span><select aria-label="Period ${number} building"><option value="">Auto-detect</option></select></label>
     <label class="field field-color"><span>Color</span><input type="color" value="${PERIOD_COLORS[number - 1]}" aria-label="Period ${number} color"></label>
   `;
   const select = query<HTMLSelectElement>("select", card);
@@ -467,6 +468,8 @@ function createPeriod(number: number) {
   const roomInput = query<HTMLInputElement>('input[type="text"]', card);
   roomInput.addEventListener("input", () => inferBuilding(card));
   roomInput.addEventListener("change", () => inferBuilding(card));
+  const colorInput = query<HTMLInputElement>('input[type="color"]', card);
+  colorInput.addEventListener("input", () => card.style.setProperty("--period-accent", colorInput.value));
   updateSuggestions(card, false);
   return card;
 }
@@ -540,6 +543,7 @@ function applyPeriods(periods: Period[], { clearShare = true } = {}) {
     roomInput.value = period.room;
     inferBuilding(card);
     colorInput.value = HEX_COLOR.test(period.color) ? period.color : PERIOD_COLORS[index];
+    card.style.setProperty("--period-accent", colorInput.value);
   });
   if (clearShare) removeSharedSchedule();
   invalidatePreview();

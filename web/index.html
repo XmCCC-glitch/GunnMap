@@ -3,29 +3,42 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#19191c" />
     <title>Gunn Seven-Period Map</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <header class="site-header">
-      <div class="brand-mark">G</div>
-      <div>
-        <div class="eyebrow">GUNN CAMPUS MAP</div>
-        <h1>Seven-Period Map</h1>
-      </div>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <aside class="site-sidebar" aria-label="GunnMap navigation">
+      <a class="brand" href="/" aria-label="GunnMap home">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg></span>
+        <span class="brand-name">Gunn<span>Map</span></span>
+      </a>
+      <p class="brand-caption">A little direction for your day.</p>
+      <div class="nav-label">EXPLORE CAMPUS</div>
       <nav class="site-nav" aria-label="Campus maps">
-        <a href="/" aria-current="page">Schedule Map</a>
-        <a href="/evacuation">Evacuation Routes</a>
+        <a href="/" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg><span>Schedule Map</span></a>
+        <a href="/evacuation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M8 5h8a4 4 0 0 1 0 8H8a4 4 0 0 0 0 8h8"/></svg><span>Evacuation Routes</span></a>
       </nav>
+      <div class="sidebar-note"><span class="campus-dot" aria-hidden="true"></span>Made for Gunn students<p>Your campus. Your way.</p></div>
+    </aside>
+    <div class="app-content">
+    <header class="page-intro">
+      <svg class="hero-waves" viewBox="0 0 1400 260" preserveAspectRatio="none" aria-hidden="true"><path fill="#ffffff09" d="M0 80C300 210 550 30 800 100s350 90 600-20V0H0Z"/><path fill="#15151b24" d="M0 160c230 50 390-30 610-10s430 130 790-45v155H0Z"/><path fill="#232325" d="M0 230c310-65 450 60 710 0s420-5 690 0v30H0Z"/></svg>
+      <div class="intro-copy"><div class="eyebrow">GUNN HIGH SCHOOL <span aria-hidden="true">/</span> YOUR CAMPUS COMPANION</div>
+        <h1>Know your way.</h1>
+        <p>Your classes, your colors, your campus. All on one map.</p>
+      </div>
+      <div class="intro-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg><span>7 periods.<br><strong>One map.</strong></span></div>
     </header>
 
-    <main class="layout">
+    <main id="main-content" class="layout">
       <section class="editor panel" aria-labelledby="editor-title">
         <div class="panel-heading">
           <div>
             <div class="eyebrow">YOUR SCHEDULE</div>
-            <h2 id="editor-title">Set Up Your Periods</h2>
+            <h2 id="editor-title">Your schedule</h2>
           </div>
           <div class="panel-actions">
             <button id="sample-button" class="text-button" type="button">Load Example</button>
@@ -33,6 +46,7 @@
             <button id="share-button" class="text-button" type="button">Share Link</button>
           </div>
         </div>
+        <p class="editor-hint">Enter a room — we’ll find its building for you.</p>
         <div class="template-controls">
           <label for="template-select">Saved templates</label>
           <select id="template-select" aria-label="Saved schedule templates">
@@ -44,7 +58,7 @@
         <form id="period-form" novalidate>
           <div id="period-list" class="period-list"></div>
           <div class="form-actions">
-            <button id="render-button" class="primary-button" type="submit">Generate Map <span aria-hidden="true">↗</span></button>
+            <button id="render-button" class="primary-button" type="submit">Generate Map <span aria-hidden="true">→</span></button>
             <span id="status" class="status" role="status" aria-live="polite"></span>
             <span id="draft-status" class="draft-status" role="status" aria-live="polite"></span>
           </div>
@@ -55,7 +69,7 @@
         <div class="panel-heading">
           <div>
             <div class="eyebrow">MAP PREVIEW</div>
-            <h2 id="preview-title">Final Map</h2>
+            <h2 id="preview-title">Your campus map</h2>
           </div>
           <a id="download-link" class="download-link is-disabled" href="#" download="gunn-period-map.png" aria-disabled="true">Download PNG</a>
         </div>
@@ -66,11 +80,14 @@
             <div id="room-markers" class="room-markers"></div>
           </div>
         </div>
+        <div class="map-key"><span><i class="key-dot" aria-hidden="true"></i> Your class locations</span><span>Click a room for evacuation info <span aria-hidden="true">↗</span></span></div>
         <p id="room-click-help" class="map-help" hidden>Marker colors identify class periods; shared rooms show every period's color. Click a classroom marker or a room below for its fire assembly location. Click the map background to view the full-size PNG.</p>
         <div id="legend" class="legend" aria-label="Highlighted rooms"></div>
         <p id="warning" class="warning" role="status"></p>
       </section>
     </main>
+    <footer class="site-footer"><span>GunnMap <span aria-hidden="true">·</span> Henry M. Gunn High School</span><span>Unofficial student resource</span></footer>
+    </div>
 
     <dialog id="template-dialog" class="room-dialog template-dialog" aria-labelledby="template-dialog-title">
       <h2 id="template-dialog-title">Save Schedule Template</h2>
