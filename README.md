@@ -25,6 +25,12 @@ An unofficial campus map for Henry M. Gunn High School. The React browser app, N
 
 ## Run
 
+### GitHub Pages
+
+The `github-page-10/6` branch builds a static version at `https://xmccc-glitch.github.io/GunnMap/` through `.github/workflows/pages.yml`. In repository **Settings → Pages**, set **Build and deployment → Source** to **GitHub Actions**. Pushing that branch then builds and deploys the site. To verify the artifact locally, run `npm run build:pages` and serve `dist/web` under `/GunnMap/`.
+
+The Pages build includes the current room directory, room search, evacuation status, and browser-generated schedule PNGs. Schedule drafts and generated images stay in the browser; no Node API or image store runs on GitHub Pages. Generated images can be downloaded, but the Pages version does not offer the server version's offline save and service worker. The browser build is mounted under `/GunnMap/` and uses `404.html` to load its client routes on direct visits.
+
 Install Node.js 22.12 or newer, then:
 
 ```sh

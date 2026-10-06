@@ -21,12 +21,13 @@ import {
   saveSharedPreview,
 } from "../features/schedule/schedule-storage.js";
 import type { Period, ScheduleTemplate } from "../features/schedule/types.js";
-import type { RoomOption, RoomData } from "../features/rooms/types.js";
+import type { RoomOption } from "../features/rooms/types.js";
 import { buildingName } from "../features/rooms/room-display.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
+import { isPages, loadRooms } from "../features/pages/site-data.js";
 
 interface ActiveRender {
   revision: number;
@@ -142,11 +143,7 @@ export function SchedulePage() {
 
   useEffect(() => {
     let current = true;
-    void fetch("/api/rooms", { credentials: "omit" })
-      .then(async response => {
-        if (!response.ok) throw new Error("Could not load the room list.");
-        return await response.json() as RoomData;
-      })
+    void loadRooms()
       .then(data => {
         if (!current) return;
         setRooms(data.rooms);
@@ -270,7 +267,7 @@ export function SchedulePage() {
     flushPendingDraft();
     setMoreOpen(false);
     const encoded = encodeURIComponent(JSON.stringify(periods));
-    const shareUrl = `${window.location.origin}/#schedule=${encoded}`;
+    const shareUrl = `${window.location.origin}${isPages ? import.meta.env.BASE_URL : "/"}#schedule=${encoded}`;
     window.history.replaceState(null, "", shareUrl);
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -396,35 +393,37 @@ export function SchedulePage() {
       revision: requestRevision,
       promise: (async () => {
         try {
-          const response = await fetch("/api/render", {
-            method: "POST",
-            credentials: "omit",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ periods: periods.map(period => ({
-              ...period,
-              room: period.room.trim(),
-              building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
-            })) }),
-          });
-          const result = await response.json() as {
-            image_url?: string;
-            error?: string;
-          };
-          const imageUrl = result.image_url;
+          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(periods)) : await (async () => {
+            const response = await fetch("/api/render", {
+              method: "POST",
+              credentials: "omit",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ periods: periods.map(period => ({
+                ...period,
+                room: period.room.trim(),
+                building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
+              })) }),
+            });
+            const result = await response.json() as {
+              image_url?: string;
+              error?: string;
+            };
+            if (!response.ok || !result.image_url) throw new Error(result.error ?? "Map generation failed.");
+            return result.image_url;
+          })();
           if (requestRevision !== revision.current) return false;
-          if (!response.ok || !imageUrl) {
-            throw new Error(result.error ?? "Map generation failed.");
-          }
           const image = new Image();
           image.src = imageUrl;
           await image.decode();
           if (requestRevision !== revision.current) return false;
+          if (isPages && imageUrl.length >= 8_000_000) throw new Error("The generated map is too large for this browser. Try fewer rooms.");
           try {
             sessionStorage.setItem(GENERATED_MAP_SESSION_KEY, imageUrl);
           } catch {
-            // The image URL remains shareable without session storage.
+            if (isPages) throw new Error("Browser session storage is unavailable. Enable it to view the generated map.");
+            // Server-generated image URLs remain shareable without session storage.
           }
-          navigate(`/generate-map?image=${encodeURIComponent(imageUrl)}`);
+          navigate(isPages ? "/generate-map" : `/generate-map?image=${encodeURIComponent(imageUrl)}`);
           return true;
         } catch (error) {
           if (requestRevision === revision.current) {

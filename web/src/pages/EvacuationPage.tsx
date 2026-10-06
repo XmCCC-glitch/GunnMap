@@ -5,10 +5,10 @@ import { buildingName } from "../features/rooms/room-display.js";
 import type {
   EvacuationOverview,
   ScheduleEvacuationEntry,
-  ScheduleLookupResponse,
 } from "../features/evacuation/types.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
+import { loadEvacuation, lookupRoom, siteUrl } from "../features/pages/site-data.js";
 import "@awesome.me/webawesome/dist/components/tooltip/tooltip.js";
 
 type EntryWithMarker = ScheduleEvacuationEntry & {
@@ -140,11 +140,7 @@ export function EvacuationPage() {
   useEffect(() => {
     let current = true;
 
-    void fetch("/api/evacuation-data", { credentials: "omit" })
-      .then(async response => {
-        if (!response.ok) throw new Error("Evacuation data is unavailable.");
-        return await response.json() as EvacuationOverview;
-      })
+    void loadEvacuation()
       .then(data => {
         if (current) setOverview(data);
       })
@@ -168,11 +164,7 @@ export function EvacuationPage() {
 
     void Promise.all(selected.map(async period => {
       try {
-        const query = encodeURIComponent(period.room);
-        const response = await fetch(`/api/room-lookup?q=${query}`, { credentials: "omit" });
-        if (!response.ok) throw new Error("Room lookup failed");
-
-        const result = await response.json() as ScheduleLookupResponse;
+        const result = await lookupRoom(period.room);
         const matches = period.building
           ? result.rooms.filter(room => room.building === period.building)
           : result.rooms;
@@ -286,7 +278,7 @@ export function EvacuationPage() {
             <div className="map-links">
               <a
                 className="download-link"
-                href="/evacuation-map.png"
+                href={siteUrl("/evacuation-map.png")}
                 download="gunn-campus-map-2026.png"
                 onClick={event => {
                   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -315,7 +307,7 @@ export function EvacuationPage() {
             >
               <span className="evacuation-map-art">
                 <img
-                src="/evacuation-map.webp"
+                  src={siteUrl("/evacuation-map.webp")}
                   alt="Gunn school site map dated September 3, 2026, without evacuation routes. Open the map to zoom and pan."
                 />
               </span>
@@ -482,7 +474,7 @@ export function EvacuationPage() {
           <div ref={viewerArt} className="evacuation-map-art">
             <img
               ref={viewerImage}
-              src="/evacuation-map.webp"
+              src={siteUrl("/evacuation-map.webp")}
               alt="Gunn school site map dated September 3, 2026, without evacuation routes."
             />
             {markerEntries.length > 0 && (

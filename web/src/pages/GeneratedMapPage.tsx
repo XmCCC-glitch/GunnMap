@@ -3,13 +3,14 @@ import { Link, useSearchParams } from "react-router-dom";
 import { GENERATED_MAP_SESSION_KEY } from "../features/schedule/schedule-storage.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { removeOfflineMap, savedOfflineMap, saveMapOffline } from "../features/offline/offline-client.js";
+import { isPages } from "../features/pages/site-data.js";
 
 const imagePattern = /^\/output\/period_map_[0-9a-f]{32}\.png$/i;
 
 function savedImagePath() {
   try {
     const saved = window.sessionStorage.getItem(GENERATED_MAP_SESSION_KEY) ?? "";
-    return imagePattern.test(saved) ? saved : "";
+    return imagePattern.test(saved) || (isPages && saved.length < 8_000_000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(saved)) ? saved : "";
   } catch {
     return "";
   }
@@ -31,7 +32,7 @@ export function GeneratedMapPage() {
 
   useEffect(() => {
     let current = true;
-    void savedOfflineMap().then(path => {if (current) setOfflinePath(path);}).catch(() => {});
+    if (!isPages) void savedOfflineMap().then(path => {if (current) setOfflinePath(path);}).catch(() => {});
     return () => {current = false;};
   }, []);
 
@@ -81,9 +82,9 @@ export function GeneratedMapPage() {
               <Link className="download-link" to="/">
                 Edit schedule
               </Link>
-              <button type="button" className="download-link" disabled={saving} onClick={() => void changeOfflineCopy()}>
+              {!isPages && <button type="button" className="download-link" disabled={saving} onClick={() => void changeOfflineCopy()}>
                 {saving ? "Saving…" : source === offlinePath ? "Remove offline copy" : "Save offline"}
-              </button>
+              </button>}
             </div>
           )}
         </div>

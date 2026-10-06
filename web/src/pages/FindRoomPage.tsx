@@ -6,9 +6,9 @@ import { buildingName, roomLocationLabel } from "../features/rooms/room-display.
 import type {
   LocatedRoom,
   RoomData,
-  RoomLookupResponse,
 } from "../features/rooms/types.js";
 import { useToast } from "../shared/toast.js";
+import { loadRooms, lookupRoom, siteUrl } from "../features/pages/site-data.js";
 import type { CSSVariables } from "../shared/css-types.js";
 
 export function FindRoomPage() {
@@ -35,11 +35,7 @@ export function FindRoomPage() {
 
   useEffect(() => {
     let current = true;
-    void fetch("/api/rooms", { credentials: "omit" })
-      .then(async response => {
-        if (!response.ok) throw new Error();
-        return await response.json() as RoomData;
-      })
+    void loadRooms()
       .then(data => {
         if (current) setRooms(data.rooms);
       })
@@ -81,10 +77,8 @@ export function FindRoomPage() {
     setSearching(true);
     setMessage("Searching…");
     try {
-      const response = await fetch(`/api/room-lookup?q=${encodeURIComponent(query)}`, { credentials: "omit" });
-      const result = await response.json() as RoomLookupResponse;
+      const result = await lookupRoom(query);
       if (currentRevision !== requestRevision.current) return;
-      if (!response.ok) throw new Error(result.error ?? "Room search failed.");
       setMapSize(result.map_size);
       if (!result.rooms.length) {
         setMessage("");
@@ -221,7 +215,7 @@ export function FindRoomPage() {
               <h2 id="room-map-title">Campus map</h2>
               <a
                 className="download-link"
-                href="/map.png"
+                href={siteUrl("/map.png")}
                 download="gunn-campus-map.png"
                 onClick={event => {
                   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -253,7 +247,7 @@ export function FindRoomPage() {
               <div ref={art} className="room-locator-art">
                 <img
                   ref={image}
-                  src="/map.webp"
+                  src={siteUrl("/map.webp")}
                   alt={`Gunn campus map with ${selectedRoom.label} highlighted`}
                 />
                 <span
