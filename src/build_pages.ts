@@ -41,9 +41,15 @@ await Promise.all([
 const base = "/GunnMap/";
 const template = await readFile(resolve(ROOT, "web/index.html"), "utf8");
 const html = template.replaceAll('href="/', `href="${base}`).replaceAll('src="/', `src="${base}`);
+const routes = ["evacuation", "find-room", "generate-map"];
 await Promise.all([
   writeFile(resolve(output, "index.html"), html),
   writeFile(resolve(output, "404.html"), html),
+  ...routes.map(async route => {
+    const routeDirectory = resolve(output, route);
+    await mkdir(routeDirectory, { recursive: true });
+    await writeFile(resolve(routeDirectory, "index.html"), html);
+  }),
   writeFile(resolve(output, "manifest.webmanifest"), JSON.stringify({
     ...JSON.parse(await readFile(resolve(ROOT, "web/manifest.webmanifest"), "utf8")),
     id: base,
