@@ -27,27 +27,26 @@ export interface EvacuationOverview {
   validationIssues: string[];
 }
 
-export interface ScheduleEvacuationEntry {
+interface ScheduleRoomPeriod {
   period: number;
-  id: string;
   room: string;
   building: string;
-  floor: number | null;
-  reviewRequired: boolean;
   color: string;
-  marker: [number, number] | null;
-  evacuation: EvacuationInfo | null;
 }
 
-export interface ScheduleLookupResponse {
-  map_revision: string;
-  rooms: Array<{
-    id: string;
-    label: string;
-    building: string;
-    floor: number;
-    marker: [number, number];
-    evacuation: EvacuationInfo;
-  }>;
-  map_size: [number, number];
+export interface LocatedScheduleEntry extends ScheduleRoomPeriod {
+  status: "located";
+  id: string;
+  floor: number;
+  marker: [number, number];
+  evacuation: EvacuationInfo;
 }
+
+export interface UnlocatedScheduleEntry extends ScheduleRoomPeriod {
+  status: "review-required" | "not-found" | "lookup-failed";
+  floor: null;
+  marker: null;
+  evacuation: null;
+}
+
+export type ScheduleEvacuationEntry = LocatedScheduleEntry | UnlocatedScheduleEntry;

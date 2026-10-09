@@ -13,9 +13,9 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {configurable: tru
 const {createRoot} = await import('react-dom/client');
 const note = 'A current school evacuation plan is awaiting verification. Follow current school staff directions.';
 const entries: ScheduleEvacuationEntry[] = [
-  {period: 1, id: 'R016', room: 'A134', building: 'A', floor: 1, reviewRequired: false, color: '#123456', marker: [50, 50], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
-  {period: 2, id: 'R141', room: 'N214', building: 'N', floor: 2, reviewRequired: false, color: '#654321', marker: [75, 75], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
-  {period: 3, id: 'R016', room: 'A134', building: 'A', floor: 1, reviewRequired: false, color: '#987654', marker: [50, 50], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
+  {period: 1, id: 'R016', room: 'A134', building: 'A', floor: 1, status: 'located', color: '#123456', marker: [50, 50], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
+  {period: 2, id: 'R141', room: 'N214', building: 'N', floor: 2, status: 'located', color: '#654321', marker: [75, 75], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
+  {period: 3, id: 'R016', room: 'A134', building: 'A', floor: 1, status: 'located', color: '#987654', marker: [50, 50], evacuation: {status: 'unconfirmed', group: null, color: null, destination: 'Unconfirmed', short_destination: null, reference_label: null, note}},
 ];
 
 test('room buttons expose persistent period, building, floor and assembly details without hover', async () => {

@@ -1,9 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CSSVariables } from "../../shared/css-types.js";
-import { findRoomMatches } from "../../../../src/domain/room-matching.js";
 import { RoomInput } from "../rooms/RoomInput.js";
 import { buildingName, roomLocationLabel } from "../rooms/room-display.js";
-import { periodRoomState } from "./room-validation.js";
+import { inferRoomBuilding, periodRoomState } from "./room-validation.js";
 import { PERIOD_COLORS } from "./schedule-storage.js";
 import type { Period } from "./types.js";
 import type { RoomOption } from "../rooms/types.js";
@@ -16,6 +15,12 @@ interface PeriodEditorProps {
   buildings: string[];
   disabled?: boolean;
   onChange(next: Period[], previous: Period[]): void;
+}
+
+function deriveAutoBuildings(periods: Period[], rooms: RoomOption[]) {
+  return periods.map(period => inferRoomBuilding(rooms, period.room) === period.building
+    ? period.building
+    : "");
 }
 
 export function PeriodEditor({
@@ -35,22 +40,10 @@ export function PeriodEditor({
     query?.addEventListener("change", changed);
     return () => query?.removeEventListener("change", changed);
   }, []);
-  const [autoBuildings, setAutoBuildings] = useState<string[]>(() => periods.map((period) => {
-    const matches = findRoomMatches(rooms, period.room);
-    const candidates = [...new Set(matches.map((room) => room.building))];
-    return candidates.length === 1 && candidates[0] === period.building
-      ? period.building
-      : "";
-  }));
+  const [autoBuildings, setAutoBuildings] = useState(() => deriveAutoBuildings(periods, rooms));
 
   useEffect(() => {
-    setAutoBuildings(periods.map((period) => {
-      const matches = findRoomMatches(rooms, period.room);
-      const candidates = [...new Set(matches.map((room) => room.building))];
-      return candidates.length === 1 && candidates[0] === period.building
-        ? period.building
-        : "";
-    }));
+    setAutoBuildings(deriveAutoBuildings(periods, rooms));
   }, [periods, rooms]);
 
   function update(index: number, mutate: (period: Period, nextAuto: string[]) => void) {
@@ -65,10 +58,9 @@ export function PeriodEditor({
   function updateRoom(index: number, value: string) {
     update(index, (period, nextAuto) => {
       period.room = value;
-      const matches = findRoomMatches(rooms, value);
-      const candidates = [...new Set(matches.map(room => room.building))];
-      if (candidates.length === 1) {
-        period.building = candidates[0];
+      const inferred = inferRoomBuilding(rooms, value);
+      if (inferred) {
+        period.building = inferred;
         nextAuto[index] = period.building;
       } else if (nextAuto[index] && period.building === nextAuto[index]) {
         period.building = "";

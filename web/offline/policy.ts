@@ -1,3 +1,6 @@
+import { GENERATED_IMAGE } from '../../src/domain/generated-map-path.js';
+export { GENERATED_IMAGE } from '../../src/domain/generated-map-path.js';
+
 export const PUBLIC_CACHE_PREFIX = 'gunnmap-public-';
 export const PUBLIC_MANIFEST_KEY = '/__gunnmap_precache_manifest__';
 export const NETWORK_GET_TIMEOUT_MS = 4000;
@@ -8,7 +11,6 @@ export const PERSONAL_SOURCE_HEADER = 'X-GunnMap-Saved-Source';
 export const MAP_REVISION_HEADER = 'X-GunnMap-Map-Revision';
 export const GENERATED_AT_HEADER = 'X-GunnMap-Generated-At';
 export const PERSONAL_SAVED_AT_HEADER = 'X-GunnMap-Saved-At';
-export const GENERATED_IMAGE = /^\/output\/period_map_[0-9a-f]{32}\.png$/;
 export const APP_ROUTES = new Set(['/', '/evacuation', '/find-room', '/generate-map']);
 
 export function generatedImagePath(value: string, origin: string): string | null {

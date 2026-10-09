@@ -45,6 +45,12 @@ The server binds to `127.0.0.1` by default. Set `HOST` and `PORT` to configure i
 
 Compiled files live in `dist/`, including the React browser bundles and service worker in `dist/web/`. Keep `web/index.html`, `web/style.css`, the web app manifest and icons, `public/assets/`, `src/map/`, `src/data/room_regions.json`, `src/data/room_index.csv`, `src/data/building_regions.json`, and `src/data/evacuation_data.json` alongside `dist/` when deploying. The server serves the same SPA shell for all four routes and delivers its bundle and static assets from these locations.
 
+## Code organization
+
+Follow [AGENTS.md](AGENTS.md) for development requirements: cohesive modules, single responsibilities, explicit contracts, readable code, and no speculative compatibility or unused extension points. Ask about unclear behavior before implementing it.
+
+Route pages compose feature components and hooks. Schedule editing, history, rendering requests, and dialogs have separate responsibilities under `web/src/features/schedule/`. Room requests share `room-api.ts`, and destination text uses one formatter. The HTTP server delegates schedule validation and rendering to `src/schedule_render.ts`, SVG legend drawing to `src/schedule_legend.ts`, and room serialization to `src/room_response.ts`. The server, browser, and offline worker share room API types and personal-map URL rules in `src/domain/`.
+
 ## Campus maps
 
 ### Schedule Map
@@ -66,6 +72,8 @@ Where available, browser locks serialize template writes and cleanup across tabs
 The `/evacuation` page shows the September 2026 official site map. It has no verified evacuation routes or assembly points, so room assignments are unconfirmed. Open the map to zoom and pan it in a same-page viewer; use the `×` button to close it or download the PNG. When a schedule is saved on the device, period circles identify its classrooms without implying an evacuation destination. Reference notes identify the source and verification status.
 
 Selecting a period inside the enlarged viewer opens persistent room details, including its floor, building, assembly status, and source note. Visible period buttons also allow selection without targeting a small marker. Saved rooms from an older or unknown revision stay hidden until reviewed in the schedule editor. The page separates the campus site-map source from school evacuation-plan verification and lists missing evidence. See [EVACUATION_REVIEW.md](EVACUATION_REVIEW.md) for the verification workflow.
+
+Room-query failures are shown as loading failures. They do not replace confirmed room identities with guessed locations or tell the user that a network failure is an incorrect room name.
 
 ### Find a Room
 

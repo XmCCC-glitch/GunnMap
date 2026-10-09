@@ -110,7 +110,6 @@ export function usePanzoom(
     else mapImage.addEventListener("load", initialize, { once: true });
     resizeObserver = new ResizeObserver(() => {
       if (!mapImage.naturalWidth) return;
-      if (fit) destroyPanzoom();
       initialize();
     });
     resizeObserver.observe(viewport);

@@ -3,10 +3,11 @@ import type { FormEvent } from "react";
 import { RoomInput } from "../features/rooms/RoomInput.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { buildingName, roomLocationLabel } from "../features/rooms/room-display.js";
+import { loadRoomDirectory, lookupRoom } from "../features/rooms/room-api.js";
+import { evacuationDestination } from "../features/evacuation/formatters.js";
 import type {
   LocatedRoom,
   RoomData,
-  RoomLookupResponse,
 } from "../features/rooms/types.js";
 import { useToast } from "../shared/toast.js";
 import type { CSSVariables } from "../shared/css-types.js";
@@ -24,7 +25,7 @@ export function FindRoomPage() {
   const stage = useRef<HTMLDivElement>(null);
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
-  const requestRevision = useRef(0);
+  const lookupController = useRef<AbortController | null>(null);
   const focus = selectedRoom
     ? {
         x: selectedRoom.marker[0] / mapSize[0],
@@ -35,23 +36,23 @@ export function FindRoomPage() {
   const controls = usePanzoom(stage, art, image, { active: Boolean(selectedRoom), focus, animateFocus: true });
 
   useEffect(() => {
-    let current = true;
-    void fetch("/api/rooms", { credentials: "omit" })
-      .then(async response => {
-        if (!response.ok) throw new Error();
-        return await response.json() as RoomData;
-      })
+    const controller = new AbortController();
+    void loadRoomDirectory(controller.signal)
       .then(data => {
-        if (current) { setRooms(data.rooms); setMapRevision(data.map_revision); }
+        if (!controller.signal.aborted) {
+          setRooms(data.rooms);
+          setMapRevision(data.map_revision);
+        }
       })
       .catch(() => {
-        if (current) {
+        if (!controller.signal.aborted) {
           showToast("The room list could not be loaded. Try reloading the page.");
         }
       });
 
     return () => {
-      current = false;
+      controller.abort();
+      lookupController.current?.abort();
     };
   }, [showToast]);
 
@@ -69,8 +70,7 @@ export function FindRoomPage() {
     event?.preventDefault();
     event?.currentTarget.querySelector<HTMLInputElement>("#find-room-input")?.blur();
     const query = input.trim();
-    requestRevision.current += 1;
-    const currentRevision = requestRevision.current;
+    lookupController.current?.abort();
     setSelectedRoom(null);
     setChoices([]);
     setMessage("");
@@ -86,11 +86,11 @@ export function FindRoomPage() {
     }
     setSearching(true);
     setMessage("Searching…");
+    const controller = new AbortController();
+    lookupController.current = controller;
     try {
-      const response = await fetch(`/api/room-lookup?q=${encodeURIComponent(query)}`, { credentials: "omit" });
-      const result = await response.json() as RoomLookupResponse;
-      if (currentRevision !== requestRevision.current) return;
-      if (!response.ok) throw new Error(result.error ?? "Room search failed.");
+      const result = await lookupRoom(query, controller.signal);
+      if (controller.signal.aborted) return;
       if (result.map_revision !== mapRevision) throw new Error("The campus map has changed. Reload and accept the available update before searching again.");
       setMapSize(result.map_size);
       if (!result.rooms.length) {
@@ -101,31 +101,22 @@ export function FindRoomPage() {
         setChoices(result.rooms);
       } else chooseRoom(result.rooms[0]);
     } catch (error) {
-      if (currentRevision === requestRevision.current) {
+      if (!controller.signal.aborted) {
         setMessage("");
         showToast(error instanceof Error ? error.message : "Room search failed.");
       }
     } finally {
-      if (currentRevision === requestRevision.current) setSearching(false);
+      if (!controller.signal.aborted) setSearching(false);
     }
   };
 
   const evacuation = selectedRoom?.evacuation;
-  const reference = evacuation?.reference_label
-    && !/^[A-Z]$/i.test(evacuation.reference_label)
-    ? `${evacuation.reference_label} · `
-    : "";
-  const destinationName = evacuation?.short_destination
-    ?? evacuation?.destination
-    ?? "";
-  const destination = selectedRoom && evacuation
-    ? evacuation.status === "mapped"
-      ? `${selectedRoom.label} → ${reference}${destinationName} (${evacuation.group})`
-      : `${selectedRoom.label} → ${evacuation.destination}`
+  const destination = selectedRoom
+    ? `${selectedRoom.label} → ${evacuationDestination(selectedRoom.evacuation)}`
     : "";
 
   const handleInputChange = (value: string) => {
-    requestRevision.current += 1;
+    lookupController.current?.abort();
     setInput(value);
     setSelectedRoom(null);
     setChoices([]);
@@ -169,9 +160,7 @@ export function FindRoomPage() {
           </button>
         </form>
         <p
-          className={`room-lookup-message${
-            message && !message.includes("Searching") ? " is-error" : ""
-          }`}
+          className="room-lookup-message"
           role="status"
           aria-live="polite"
         >
