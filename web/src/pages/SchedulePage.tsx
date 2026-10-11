@@ -42,6 +42,7 @@ export function SchedulePage() {
   const [campusUpdatedAt, setCampusUpdatedAt] = useState(savedCampus?.as_of ?? "");
   const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
   const [generatedImage, setGeneratedImage] = useState(savedImagePath);
+  const campusSignInController = useRef<AbortController | null>(null);
   const editorForm = useRef<HTMLFormElement>(null);
   const generatedMap = useRef<HTMLDivElement>(null);
   const render = useScheduleRender(showToast);
@@ -173,6 +174,10 @@ export function SchedulePage() {
   }
 
   function keepPagesCampus(data: CampusPeriods | null, status: string) {
+    if (!data) {
+      setResponsivePeriods([]);
+      invalidateGenerated();
+    }
     saveCampusPeriods(data);
     setCampusData(data);
     setCampusStatus(status);
@@ -232,9 +237,12 @@ export function SchedulePage() {
               </button>}
             </div>
             {isPages && <>
-              <CampusSignIn onSynced={data => keepPagesCampus(data, "Connected")} />
+              <CampusSignIn controller={campusSignInController} onSynced={data => keepPagesCampus(data, "Connected")} />
               {campusData && <button type="button" className="download-link campus-forget"
-                onClick={() => keepPagesCampus(null, "Saved Campus schedule removed from this browser.")}>
+                onClick={() => {
+                  campusSignInController.current?.abort();
+                  keepPagesCampus(null, "Saved Campus schedule removed from this browser.");
+                }}>
                 Forget saved Campus schedule
               </button>}
               <details className="campus-file-import">
