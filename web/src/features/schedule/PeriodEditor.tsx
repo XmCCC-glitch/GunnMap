@@ -28,6 +28,7 @@ export interface ResponsivePeriod extends Period {
   course: string;
   startTime: string | null;
   endTime: string | null;
+  placeholder?: boolean;
 }
 
 export function PeriodEditor({
@@ -231,7 +232,7 @@ function ResponsivePeriodCard({ period, index, rooms, buildings, wide, manualBui
   const colorTrigger = useRef<HTMLButtonElement>(null);
   const id = `responsive-${index}`;
   const { matches, state, invalid } = periodRoomState(period, rooms);
-  const feedback = state === "empty" ? "No room listed for this session"
+  const feedback = state === "empty" ? (period.placeholder ? "No class this period" : "No room listed for this session")
     : state === "matched" ? `Found ${roomLocationLabel(matches[0])} · ${buildingName(matches[0].building)}${matches[0].floor === 2 ? " · 2nd floor" : ""}`
     : state === "ambiguous" ? "More than one room matches. Choose a location below."
     : `Room not found${period.building ? ` in ${buildingName(period.building)}` : ""}. Check the room or building.`;
@@ -264,9 +265,9 @@ function ResponsivePeriodCard({ period, index, rooms, buildings, wide, manualBui
     <p className="period-room-feedback" id={`${id}-feedback`} aria-live="polite">
       {disabled ? "Loading room list…" : feedback}
     </p>
-    <p className="period-campus-course">{period.course || "Selected session"}
+    {!period.placeholder && <p className="period-campus-course">{period.course || "Selected session"}
       {period.startTime && period.endTime ? ` · ${period.startTime}–${period.endTime}` : ""}
-    </p>
+    </p>}
     {!disabled && state === "ambiguous" && <div className="period-room-choices" aria-label={`Choose ${period.name} room`}>
       {matches.map(room => <button className="room-lookup-choice" type="button" key={room.id}
         onClick={() => updateRoom(roomLocationLabel(room) === room.label ? `${room.label} (${room.id})` : roomLocationLabel(room))}>

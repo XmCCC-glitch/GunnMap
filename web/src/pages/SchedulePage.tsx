@@ -28,7 +28,8 @@ import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
 import {
   CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
-  numericCandidates, placementsForDate, responsiveColor, responsivePlacements, schoolDate, visibleNumericPeriods,
+  needsFridayStudyHall, numericCandidates, placementsForDate, responsiveColor,
+  responsivePlacements, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
 import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
 import type { CSSVariables } from "../shared/css-types.js";
@@ -196,7 +197,7 @@ export function SchedulePage() {
     if (JSON.stringify(imported) !== JSON.stringify(periodsRef.current)) {
       writeSchedule(imported, { preview: false, persistDraft: true });
     }
-    setResponsivePeriods(responsivePlacements(dayRows).map(row => {
+    const responsive: ResponsivePeriod[] = responsivePlacements(dayRows).map(row => {
       const room = row.room?.trim() ?? "";
       const matches = findRoomMatches(rooms, room);
       return {
@@ -205,7 +206,14 @@ export function SchedulePage() {
         room, building: matches.length === 1 ? matches[0].building : "",
         color: responsiveColor(row.period),
       };
-    }));
+    });
+    if (needsFridayStudyHall(campusDate, dayRows)) {
+      responsive.push({
+        name: "Study Hall", course: "", startTime: null, endTime: null,
+        room: "", building: "", color: responsiveColor("Study Hall"), placeholder: true,
+      });
+    }
+    setResponsivePeriods(responsive);
     invalidatePreview();
     // Refreshes and date changes are deliberate sync points. A manual edit
     // should remain in place until the next refresh or date change.
