@@ -9,5 +9,8 @@
     <g display="__ROW_5_DISPLAY__"><rect x="24" y="206" width="22" height="22" fill="__ROW_5_COLOR__" /><text x="58" y="224" font-size="22" fill="#344054">__ROW_5_LABEL__</text></g>
     <g display="__ROW_6_DISPLAY__"><rect x="24" y="240" width="22" height="22" fill="__ROW_6_COLOR__" /><text x="58" y="258" font-size="22" fill="#344054">__ROW_6_LABEL__</text></g>
     <g display="__ROW_7_DISPLAY__"><rect x="24" y="274" width="22" height="22" fill="__ROW_7_COLOR__" /><text x="58" y="292" font-size="22" fill="#344054">__ROW_7_LABEL__</text></g>
+    <g display="__ROW_8_DISPLAY__"><rect x="24" y="308" width="22" height="22" fill="__ROW_8_COLOR__" /><text x="58" y="326" font-size="22" fill="#344054">__ROW_8_LABEL__</text></g>
+    <g display="__ROW_9_DISPLAY__"><rect x="24" y="342" width="22" height="22" fill="__ROW_9_COLOR__" /><text x="58" y="360" font-size="22" fill="#344054">__ROW_9_LABEL__</text></g>
+    <g display="__ROW_10_DISPLAY__"><rect x="24" y="376" width="22" height="22" fill="__ROW_10_COLOR__" /><text x="58" y="394" font-size="22" fill="#344054">__ROW_10_LABEL__</text></g>
   </g>
 </svg>

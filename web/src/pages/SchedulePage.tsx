@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { GeneratedMapPanel, savedImagePath } from "./GeneratedMapPage.js";
 import { PeriodEditor } from "../features/schedule/PeriodEditor.js";
+import type { ResponsivePeriod } from "../features/schedule/PeriodEditor.js";
 import {
   EXAMPLE_SCHEDULE,
   GENERATED_MAP_SESSION_KEY,
@@ -25,6 +26,12 @@ import type { RoomOption, RoomData } from "../features/rooms/types.js";
 import { buildingName } from "../features/rooms/room-display.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
+import {
+  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
+  needsFridayStudyHall, needsWednesdayPrime, numericCandidates, placementsForDate, responsiveColor,
+  responsivePlacements, schoolDate, visibleNumericPeriods,
+} from "../features/schedule/campus-sync.js";
+import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
 
@@ -53,7 +60,6 @@ function removeGeneratedMap() {
 }
 
 export function SchedulePage() {
-  const navigate = useNavigate();
   const showToast = useToast();
   const [rooms, setRooms] = useState<RoomOption[]>([]);
   const [buildings, setBuildings] = useState<string[]>([]);
@@ -64,6 +70,7 @@ export function SchedulePage() {
   const [templates, setTemplates] = useState<ScheduleTemplate[]>(() => loadTemplates());
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [rendering, setRendering] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(savedImagePath);
   const [sharedPeriods, setSharedPeriods] = useState<Period[] | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
@@ -73,18 +80,29 @@ export function SchedulePage() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [undoHistory, setUndoHistory] = useState<ScheduleSnapshot[]>([]);
   const [redoHistory, setRedoHistory] = useState<ScheduleSnapshot[]>([]);
+  const [campusData, setCampusData] = useState<CampusPeriods | null>(null);
+  const [campusStatus, setCampusStatus] = useState("Checking local connector…");
+  const [campusDate, setCampusDate] = useState(schoolDate);
+  const [campusUpdatedAt, setCampusUpdatedAt] = useState("");
+  const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
   const revision = useRef(0);
+  const periodsRef = useRef(periods);
+  periodsRef.current = periods;
   const activeRender = useRef<ActiveRender | null>(null);
   const lastInputUndoAt = useRef(-Infinity);
   const editorForm = useRef<HTMLFormElement>(null);
+  const generatedMap = useRef<HTMLDivElement>(null);
   const templateDialog = useRef<HTMLDialogElement>(null);
   const deleteDialog = useRef<HTMLDialogElement>(null);
   const sharedDialog = useRef<HTMLDialogElement>(null);
   const pendingDelete = useRef("");
+  const visibleNumbers = campusData && !sharedPreview
+    ? visibleNumericPeriods(campusDate) : [1, 2, 3, 4, 5, 6, 7];
 
   const invalidatePreview = useCallback(() => {
     revision.current += 1;
     setRendering(false);
+    setGeneratedImage("");
     removeGeneratedMap();
   }, []);
   useEffect(() => () => { revision.current += 1; }, []);
@@ -139,6 +157,73 @@ export function SchedulePage() {
     invalidatePreview();
     return saved;
   }, [buildings, rooms, sharedPreview, invalidatePreview, showToast]);
+
+  useEffect(() => {
+    let active = true;
+    let pending = false;
+    async function update() {
+      if (pending) return;
+      pending = true;
+      try {
+        const result = await fetchCampusPeriods();
+        if (!active) return;
+        setCampusData(result);
+        setCampusStatus("Connected");
+        setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+      } catch (error) {
+        if (!active) return;
+        setCampusStatus(error instanceof TypeError
+          ? "Local connector unavailable. Start it to sync your schedule."
+          : error instanceof Error ? error.message : "Campus sync failed.");
+      } finally { pending = false; }
+    }
+    const focused = () => { void update(); };
+    const visible = () => { if (document.visibilityState === "visible") void update(); };
+    void update();
+    window.addEventListener("focus", focused);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", focused);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!campusData || !roomsLoaded || sharedPreview) return;
+    const dayRows = placementsForDate(campusData, campusDate);
+    const imported = mapFromCampus(periodsRef.current, dayRows);
+    if (JSON.stringify(imported) !== JSON.stringify(periodsRef.current)) {
+      writeSchedule(imported, { preview: false, persistDraft: true });
+    }
+    const responsive: ResponsivePeriod[] = responsivePlacements(dayRows).map(row => {
+      const room = row.room?.trim() ?? "";
+      const matches = findRoomMatches(rooms, room);
+      return {
+        name: row.period?.trim() || "Study Hall", course: row.course || "Selected session",
+        startTime: row.start_time, endTime: row.end_time,
+        room, building: matches.length === 1 ? matches[0].building : "",
+        color: responsiveColor(row.period),
+      };
+    });
+    if (needsFridayStudyHall(campusDate, dayRows)) {
+      responsive.push({
+        name: "Study Hall", course: "", startTime: null, endTime: null,
+        room: "", building: "", color: responsiveColor("Study Hall"), placeholder: true,
+      });
+    }
+    if (needsWednesdayPrime(campusDate, dayRows)) {
+      responsive.push({
+        name: "PRIME", course: "", startTime: null, endTime: null,
+        room: "", building: "", color: responsiveColor("PRIME"), placeholder: true,
+      });
+    }
+    setResponsivePeriods(responsive);
+    invalidatePreview();
+    // Refreshes and date changes are deliberate sync points. A manual edit
+    // should remain in place until the next refresh or date change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campusData, campusDate, roomsLoaded, sharedPreview]);
 
   useEffect(() => {
     let current = true;
@@ -381,12 +466,21 @@ export function SchedulePage() {
       return activeRender.current.promise;
     }
     invalidatePreview();
-    const invalid = periods.map((period, index) => ({ index, ...periodRoomState(period, rooms) })).filter(item => item.invalid);
+    const invalid = periods.map((period, index) => ({ index, ...periodRoomState(period, rooms) }))
+      .filter(item => visibleNumbers.includes(item.index + 1) && item.invalid);
     if (invalid.length) {
       setValidationMessage(`Check period${invalid.length === 1 ? "" : "s"} ${invalid.map(item => item.index + 1).join(", ")}. Choose a recognized room before generating.`);
       const input = editorForm.current?.querySelector<HTMLInputElement>(`#period-${invalid[0].index + 1}-room`);
       input?.focus();
       input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+    const invalidResponsive = !sharedPreview
+      ? responsivePeriods.findIndex(period => periodRoomState(period, rooms).invalid) : -1;
+    if (invalidResponsive >= 0) {
+      const name = responsivePeriods[invalidResponsive].name;
+      setValidationMessage(`Check ${name}. Choose a recognized room before generating.`);
+      editorForm.current?.querySelector<HTMLInputElement>(`#responsive-${invalidResponsive}-room`)?.focus();
       return false;
     }
     setValidationMessage("");
@@ -396,15 +490,23 @@ export function SchedulePage() {
       revision: requestRevision,
       promise: (async () => {
         try {
+          const mapPeriods = periods.map((period, index) => visibleNumbers.includes(index + 1)
+            ? period : { ...period, room: "", building: "" });
           const response = await fetch("/api/render", {
             method: "POST",
             credentials: "omit",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ periods: periods.map(period => ({
+            body: JSON.stringify({ periods: mapPeriods.map(period => ({
               ...period,
               room: period.room.trim(),
               building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
-            })) }),
+            })), extras: campusData && !sharedPreview
+              ? responsivePeriods.filter(period => period.room.trim()).slice(0, 3).map(period => ({
+                  name: period.name, room: period.room.trim(),
+                  building: findRoomMatches(rooms, period.room, period.building)[0].building,
+                  color: period.color,
+                }))
+              : [] }),
           });
           const result = await response.json() as {
             image_url?: string;
@@ -424,7 +526,8 @@ export function SchedulePage() {
           } catch {
             // The image URL remains shareable without session storage.
           }
-          navigate(`/generate-map?image=${encodeURIComponent(imageUrl)}`);
+          setGeneratedImage(imageUrl);
+          window.requestAnimationFrame(() => generatedMap.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
           return true;
         } catch (error) {
           if (requestRevision === revision.current) {
@@ -445,6 +548,30 @@ export function SchedulePage() {
   };
 
   const shared = sharedPeriods ?? [];
+  const campusRows = campusData ? placementsForDate(campusData, campusDate) : [];
+
+  const handleResponsiveEdit = (index: number, next: ResponsivePeriod) => {
+    setResponsivePeriods(existing => existing.map((period, current) => current === index ? next : period));
+    invalidatePreview();
+  };
+
+  const chooseCampusCourse = (number: number, row: CampusPlacement) => {
+    const next = clonePeriods(periods);
+    const room = row.room?.trim() ?? "";
+    next[number - 1] = { ...next[number - 1], room, building: "" };
+    recordUndo(periods);
+    writeSchedule(next, { preview: false, persistDraft: true });
+  };
+
+  const downloadCampusJson = () => {
+    if (!campusData) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(campusData, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `infinite-campus-periods-${campusData.term}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   return (
     <>
@@ -555,6 +682,42 @@ export function SchedulePage() {
               </details>
             </div>
           </div>
+          <section className="campus-sync" aria-labelledby="campus-sync-title">
+            <div className="campus-sync-heading">
+              <div>
+                <h3 id="campus-sync-title">Infinite Campus</h3>
+                <p role="status">{campusStatus}{campusData ? ` · ${campusData.term} · updated ${campusUpdatedAt}` : ""}</p>
+              </div>
+              <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
+                Connect Infinite Campus
+              </button>
+            </div>
+            {campusData && <>
+              <div className="campus-sync-controls">
+                <label htmlFor="campus-date">Schedule date</label>
+                <input id="campus-date" type="date" value={campusDate} onChange={event => setCampusDate(event.currentTarget.value)} />
+                <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
+              </div>
+              {sharedPreview && <p className="campus-sync-note">Campus data is loaded. The shared preview stays in place until you leave preview mode.</p>}
+              {[1, 2, 3, 4, 5, 6, 7].map(number => {
+                if (!visibleNumbers.includes(number)) return null;
+                const choices = numericCandidates(campusRows, number);
+                return choices.length > 1 ? <label className="campus-course-choice" key={number}>
+                  <span>Period {number} has multiple active courses. Choose one:</span>
+                  <select value={(() => {
+                    const index = choices.findIndex(row => row.room?.trim() === periods[number - 1].room.trim());
+                    return index < 0 ? "" : String(index);
+                  })()} onChange={event => {
+                    const row = choices[Number(event.currentTarget.value)];
+                    if (row) chooseCampusCourse(number, row);
+                  }}>
+                    <option value="">Choose a course</option>
+                    {choices.map((row, index) => <option key={`${row.course_number}-${row.section}-${index}`} value={index}>{row.course} · {row.room || "no room"}</option>)}
+                  </select>
+                </label> : null;
+              })}
+            </>}
+          </section>
           {sharedPreview && (
             <div className="shared-preview-banner" role="region" aria-label="Shared schedule preview">
               <p>Your shared schedule is a temporary preview. Editing it keeps your device draft unchanged.</p>
@@ -577,6 +740,10 @@ export function SchedulePage() {
               rooms={rooms}
               buildings={buildings}
               disabled={!roomsLoaded}
+              campusRows={campusRows}
+              responsivePeriods={campusData && !sharedPreview ? responsivePeriods : []}
+              onResponsiveChange={handleResponsiveEdit}
+              visibleNumbers={visibleNumbers}
               onChange={handleEdit}
             />
             <div className="form-actions">
@@ -590,8 +757,14 @@ export function SchedulePage() {
                 <span aria-hidden="true">→</span>
               </button>
             </div>
+            {campusData && <div className="campus-json-action">
+              <button type="button" className="download-link" onClick={downloadCampusJson}>Download period JSON</button>
+            </div>}
           </form>
         </section>
+        {generatedImage && <div ref={generatedMap} className="generated-map-result">
+          <GeneratedMapPanel requestedImage={generatedImage} embedded />
+        </div>}
       </main>
 
       <dialog

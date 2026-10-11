@@ -39,7 +39,7 @@ export function normalizePublicOrigin(value: string | undefined): string | undef
 export function setSecurityHeaders(res: ServerResponse, hsts: boolean): void {
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:", "font-src 'self' data:", "connect-src 'self'",
+    "img-src 'self' data: blob:", "font-src 'self' data:", "connect-src 'self' http://127.0.0.1:8765",
     "worker-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'",
   ].join('; '));
   res.setHeader('X-Content-Type-Options', 'nosniff');

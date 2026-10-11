@@ -19,7 +19,7 @@ const resources: Record<string, string[]> = {
 };
 // API revisions include generation/serialization code as well as data. A data-only
 // hash would incorrectly retain old payloads after the API response format changes.
-const apiInputs = ['src/web_app.ts', 'src/project.ts', 'src/data/room_regions.json', 'src/data/evacuation_data.json',
+const apiInputs = ['src/web_app.ts', 'src/project.ts', 'src/data/room_regions.json', 'src/data/building_regions.json', 'src/data/evacuation_data.json',
   'src/evacuation.ts', 'src/domain/room-matching.ts'];
 for (const path of ['/api/rooms', '/api/offline-rooms', '/api/evacuation-data']) resources[path] = apiInputs;
 for (const name of (await readdir(resolve(root, 'dist/web/assets'))).sort()) {

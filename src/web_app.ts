@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
-import { ROOT, rooms, buildings, roomData, resolveRoom } from './project.js';
+import { ROOT, rooms, buildings, buildingData, roomData, resolveRoom } from './project.js';
 import { findRoomMatches } from './domain/room-matching.js';
 import { evacuationDataIssues, evacuationForRoom, evacuationOverview } from './evacuation.js';
 import { renderRooms, xml } from './map_highlighter.js';
@@ -13,7 +13,7 @@ import { GeneratedMapStore, DEFAULT_MAP_STORAGE_BYTES, DEFAULT_MAP_MAX_BYTES } f
 import { assertRenderRequest, configuredInteger, HttpError, normalizePublicOrigin, RenderQueue, RenderRateLimiter, setSecurityHeaders } from './server_policy.js';
 export { resolveRoom } from './project.js';
 class InputError extends Error {}
-interface LegendItem { period: number; label: string; floor: number; color: string }
+interface LegendItem { period: number | string; label: string; floor: number; color: string }
 const REVALIDATE_STATIC = 'no-cache';
 
 const evacuationIssues = evacuationDataIssues();
@@ -33,13 +33,13 @@ async function addScheduleLegend(image: Buffer, selected: LegendItem[]): Promise
   const top = height - legendHeight - padding;
   const replacements: Record<string, string> = { HEIGHT: String(legendHeight) };
 
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     const item = selected[index];
     const row = index + 1;
     replacements[`ROW_${row}_DISPLAY`] = item ? 'inline' : 'none';
     replacements[`ROW_${row}_COLOR`] = item ? xml(item.color) : '#000000';
     replacements[`ROW_${row}_LABEL`] = item
-      ? xml(`Period ${item.period} · ${item.label}${item.floor === 2 ? ' (2F)' : ''}`)
+      ? xml(`${typeof item.period === 'number' ? `Period ${item.period}` : item.period} · ${item.label}${item.floor === 2 ? ' (2F)' : ''}`)
       : '';
   }
 
@@ -53,10 +53,13 @@ async function addScheduleLegend(image: Buffer, selected: LegendItem[]): Promise
     .toBuffer();
 }
 
-export async function renderPeriods(periods: unknown, outputDir = resolve(ROOT,'output'), options: { store?: GeneratedMapStore; signal?: AbortSignal } = {}) {
+export async function renderPeriods(periods: unknown, outputDir = resolve(ROOT,'output'), options: { store?: GeneratedMapStore; signal?: AbortSignal; extras?: unknown } = {}) {
   if (!Array.isArray(periods) || periods.length !== 7) throw new InputError('Please submit all seven period slots');
   const colors: Record<string, string[]> = {};
-  const selected = [];
+  const selected: Array<LegendItem & {
+    id: string; building: string; polygon: ReturnType<typeof resolveRoom>['polygon'];
+    evacuation: ReturnType<typeof evacuationForRoom>; marker: [number, number];
+  }> = [];
   const warnings: string[] = [];
 
   for (const [slot, value] of periods.entries()) {
@@ -95,6 +98,34 @@ export async function renderPeriods(periods: unknown, outputDir = resolve(ROOT,'
         (room.label_box[1] + room.label_box[3]) / 2,
       ],
     });
+  }
+
+  if (options.extras !== undefined) {
+    if (!Array.isArray(options.extras) || options.extras.length > 3) {
+      throw new InputError('Submit at most three responsive periods');
+    }
+    for (const value of options.extras) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new InputError('Invalid responsive period');
+      const extra = value as Record<string, unknown>;
+      const name = String(extra.name ?? '').trim();
+      const building = String(extra.building ?? '').trim().toUpperCase();
+      const roomName = String(extra.room ?? '').trim();
+      const color = String(extra.color ?? '').trim();
+      if (!name || name.length > 32 || !roomName || !building || !/^#[0-9a-f]{6}$/i.test(color)) {
+        throw new InputError('Invalid responsive period details');
+      }
+      let room;
+      try { room = resolveRoom(building, roomName); }
+      catch (error) { throw new InputError(`${name}: ${(error as Error).message}`); }
+      (colors[room.id] ??= []).push(color);
+      selected.push({
+        period: name, id: room.id, label: room.label, building: room.building,
+        floor: room.floor ?? 1, color, polygon: room.polygon,
+        evacuation: evacuationForRoom(room),
+        marker: [(room.label_box[0] + room.label_box[2]) / 2,
+                 (room.label_box[1] + room.label_box[3]) / 2],
+      });
+    }
   }
 
   for (const id of Object.keys(colors)) {
@@ -193,7 +224,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
   const roomList = rooms.map(({ id, label, building, floor, aliases }) => ({
     id, label, building, floor: floor ?? 1, aliases: aliases ?? [],
   }));
-  const roomDirectory = Buffer.from(JSON.stringify({ buildings, rooms: roomList }));
+  const roomDirectory = Buffer.from(JSON.stringify({ buildings, building_regions: buildingData.regions, map_size: buildingData.image_size, rooms: roomList }));
   const locatedRooms = rooms.map(room => ({
     id: room.id,
     label: room.label,
@@ -229,7 +260,10 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
         res.on('close', abort);
         try {
           const result = await renderQueue.run(() => renderPeriods(
-            (body as { periods?: unknown }).periods, outputDir, { store: mapStore, signal: controller.signal },
+            (body as { periods?: unknown }).periods, outputDir, {
+              store: mapStore, signal: controller.signal,
+              extras: (body as { extras?: unknown }).extras,
+            },
           ), controller.signal);
           if (!res.destroyed) return send(res, 200, JSON.stringify(result));
           return;

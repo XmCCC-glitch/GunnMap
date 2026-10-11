@@ -5,7 +5,10 @@ export interface RoomMatchOption {
 }
 
 export function normalizeRoomInput(value: string) {
-  return value.normalize("NFKC").replace(/[\s\-‐‑‒–—−]+/g, "").toLowerCase();
+  const compact = value.normalize("NFKC").replace(/[\s\-‐‑‒–—−]+/g, "").toLowerCase();
+  // Infinite Campus pads single-letter building room numbers (H-03), while
+  // the printed map uses H3. Do not rewrite R069 inventory IDs.
+  return compact.replace(/^([a-pqs-t])0+(\d+)$/, "$1$2");
 }
 
 // Preserve saved schedules from the 2025 map, where R069 was merged into K5.

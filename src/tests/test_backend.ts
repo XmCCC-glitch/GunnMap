@@ -130,6 +130,24 @@ test('downloaded PNG includes all seven legend swatches without changing map coo
   }
  } finally {await rm(dir,{recursive:true,force:true});}
 });
+test('selected PRIME and SELF rooms appear in the rendered map and legend', async () => {
+ const dir = await mkdtemp(join(tmpdir(), 'gunnmap-prime-'));
+ try {
+  const base = Array.from({ length: 7 }, () => ({ building: '', room: '', color: '#e11d48' }));
+  const result = await renderPeriods(base, dir, { extras: [
+   { name: 'PRIME', building: 'H', room: 'H-03', color: '#f59e0b' },
+   { name: 'SELF 11-12', building: 'N', room: 'N-211', color: '#06b6d4' },
+  ] });
+  assert.equal(result.selected.length, 2);
+  assert.equal(result.selected[0].period, 'PRIME');
+  assert.equal(result.selected[0].label, 'H3');
+  assert.equal(result.selected[1].period, 'SELF 11-12');
+  assert.equal(result.selected[1].label, 'N211');
+  const image = await readFile(join(dir, result.image_url.split('/').pop()!));
+  const { width, height } = await sharp(image).metadata();
+  assert.deepEqual([width, height], roomData.image_size);
+ } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test('HTTP rendering, pixels, isolated images, validation and static routes',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'gunnmap-ts-')),server=createApp(dir);
  server.listen(0,'127.0.0.1');await once(server,'listening');

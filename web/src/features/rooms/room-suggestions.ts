@@ -8,6 +8,7 @@ export interface RoomSuggestion {
   building: string;
   floor?: number;
   aliases?: string[];
+  kind?: "building";
 }
 
 interface SuggestionOptions {
@@ -21,6 +22,7 @@ interface SuggestionRecord {
   searchText: string;
   building: string;
   floor?: number;
+  kind?: "building";
 }
 
 interface SelectionDetail {
@@ -49,6 +51,13 @@ function suggestionRecords(rooms: RoomSuggestion[], building: string, input: str
   }
 
   return eligible.map((room) => {
+    if (room.kind === "building") return {
+      id: room.id,
+      label: buildingName(room.building),
+      searchText: [room.building, `${room.building} building`, `${room.building} bldg`, buildingName(room.building), ...(room.aliases ?? [])].join(" "),
+      building: room.building,
+      kind: "building" as const,
+    };
     const aliases = humanAliases(room);
     const locationAlias = aliases.find((alias) => /\blocation\b/i.test(alias));
     const hasDuplicateLabel = (labelCounts.get(normalize(room.label)) ?? 0) > 1;
@@ -109,7 +118,7 @@ export function mountRoomSuggestions(
         const location = document.createElement("small");
         location.className = "room-suggestion-option-location";
         const floor = suggestion.floor === 2 ? " · 2nd floor" : "";
-        location.textContent = `${buildingName(suggestion.building)}${floor}`;
+        location.textContent = suggestion.kind === "building" ? "Whole building" : `${buildingName(suggestion.building)}${floor}`;
         item.replaceChildren(label, location);
       },
     },

@@ -128,6 +128,10 @@ test('service worker has root scope and always revalidates', async () => {
 
 test('room lookup and offline inventory preserve the React SPA API contracts', async () => {
   await withApp(async (base, dir) => {
+    const publicRooms = JSON.parse((await request(base + '/api/rooms')).body.toString());
+    assert.deepEqual(publicRooms.map_size, roomData.image_size);
+    assert.ok(publicRooms.building_regions.N.polygons.length > 1);
+    assert.ok(publicRooms.building_regions.BG.polygons.length > 0);
     const offline = JSON.parse((await request(base + '/api/offline-rooms')).body.toString());
     assert.equal(offline.rooms.length, rooms.length);
     assert.deepEqual(offline.map_size, roomData.image_size);

@@ -5,6 +5,24 @@ import { test } from "node:test";
 import { ROOT, rooms } from "../project.js";
 import { findRoomMatches, normalizeRoomInput, roomMatchesInput } from "../domain/room-matching.js";
 import { setBoundedImageTransform } from "../../web/src/features/maps/map-pan-bounds.js";
+import { buildingCenter, findBuilding } from "../../web/src/features/rooms/building-search.js";
+import { buildingData, buildings } from "../project.js";
+
+test("every searchable building has a map region and building names avoid room aliases", () => {
+  assert.deepEqual(buildingData.image_size, [2448, 1584]);
+  for (const code of buildings) {
+    const polygons = buildingData.regions[code]?.polygons;
+    assert.ok(polygons?.length, `${code} needs a building outline`);
+    assert.ok(polygons.every(polygon => polygon.length >= 3));
+    assert.equal(findBuilding(buildingData.regions, `${code} bldg`), code);
+    assert.equal(findBuilding(buildingData.regions, `${code} building`), code);
+    const [x, y] = buildingCenter(polygons);
+    assert.ok(x >= 0 && x <= 2448 && y >= 0 && y <= 1584);
+  }
+  assert.equal(findBuilding(buildingData.regions, "Bow Gym"), "BG");
+  assert.equal(findBuilding(buildingData.regions, "Bow Gymnasium"), "BG");
+  assert.equal(findBuilding(buildingData.regions, "library"), null);
+});
 
 test("map panning is clamped to the image edges at its current zoom", () => {
   const originalWindow = globalThis.window;
