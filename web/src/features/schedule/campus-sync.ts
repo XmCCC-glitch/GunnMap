@@ -1,6 +1,10 @@
 import type { Period } from "./types.js";
 
 export const CAMPUS_BRIDGE = "http://127.0.0.1:8765";
+/** Test-phase backend that signs in to ClassLink for the Pages site. */
+export const CAMPUS_SYNC_URL: string = import.meta.env?.VITE_CAMPUS_SYNC_URL
+  || "https://leo-linux.taild88ae1.ts.net:8443";
+const SAVED_PERIODS_KEY = "gunnmap.campus-periods.v1";
 export const CAMPUS_RESPONSIVE_URL = "https://pausdca.infinitecampus.org/campus/nav-wrapper/student/portal/student/responsive-schedule?appName=paloalto";
 
 export interface CampusPlacement {
@@ -41,11 +45,71 @@ export async function fetchCampusPeriods(): Promise<CampusPeriods> {
   if (!response.ok) throw new Error(response.status === 401
     ? "Sign in through the local Infinite Campus connector."
     : `Connector returned HTTP ${response.status}.`);
-  const value: unknown = await response.json();
-  if (!value || typeof value !== "object" || !Array.isArray((value as CampusPeriods).periods)) {
-    throw new Error("The connector returned an invalid period JSON response.");
+  return parseCampusPeriods(await response.json());
+}
+
+/** Sign in through the sync backend; the password is sent once and never stored here. */
+export async function syncCampusWithClassLink(username: string, password: string,
+  signal?: AbortSignal): Promise<CampusPeriods> {
+  let response: Response;
+  try {
+    response = await fetch(`${CAMPUS_SYNC_URL}/api/sync`, {
+      method: "POST", mode: "cors", credentials: "omit", cache: "no-store", signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new Error("Campus sync server is unreachable.");
   }
-  return value as CampusPeriods;
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+      ? (body as { error: string }).error : `Sync server returned HTTP ${response.status}.`;
+    throw new Error(message);
+  }
+  return parseCampusPeriods(body);
+}
+
+export function loadSavedCampusPeriods(): CampusPeriods | null {
+  try {
+    const saved = window.localStorage.getItem(SAVED_PERIODS_KEY);
+    return saved ? parseCampusPeriods(JSON.parse(saved) as unknown) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCampusPeriods(data: CampusPeriods | null): void {
+  try {
+    if (data) window.localStorage.setItem(SAVED_PERIODS_KEY, JSON.stringify(data));
+    else window.localStorage.removeItem(SAVED_PERIODS_KEY);
+  } catch {
+    // Storage can be unavailable (private mode); the current page still has the data.
+  }
+}
+
+export function parseCampusPeriods(value: unknown): CampusPeriods {
+  const invalid = () => new Error("This is not a valid Infinite Campus period JSON file.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid();
+  const data = value as Record<string, unknown>;
+  if (typeof data.term !== "string" || typeof data.as_of !== "string"
+    || !Array.isArray(data.terms) || !data.terms.every(term => typeof term === "string")
+    || !Array.isArray(data.schedules) || !data.schedules.every(day => typeof day === "string")
+    || !Array.isArray(data.periods)) throw invalid();
+  const fields = ["course", "course_number", "section", "room", "teacher", "period",
+    "start_time", "end_time", "term", "schedule_name", "course_start", "course_end"];
+  if (!data.periods.every(row => row && typeof row === "object" && !Array.isArray(row)
+    && fields.every(field => (row as Record<string, unknown>)[field] === null
+      || typeof (row as Record<string, unknown>)[field] === "string"))) throw invalid();
+  if (data.calendar !== undefined && data.calendar !== null) {
+    const calendar = data.calendar as Record<string, unknown>;
+    if (typeof calendar !== "object" || Array.isArray(calendar)
+      || typeof calendar.start_date !== "string" || typeof calendar.end_date !== "string"
+      || !Array.isArray(calendar.school_days) || !calendar.school_days.every(day => typeof day === "string")
+      || !Array.isArray(calendar.no_school_days) || !calendar.no_school_days.every(day => typeof day === "string")) throw invalid();
+  }
+  return data as unknown as CampusPeriods;
 }
 
 export function schoolDate(): string {

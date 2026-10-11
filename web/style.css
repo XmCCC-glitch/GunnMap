@@ -48,6 +48,16 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .campus-sync h3 { font-size: 16px; }
 .campus-sync p, .campus-sync-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .campus-sync-heading .primary-button { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+.campus-sign-in { display: grid; gap: 6px; max-width: 360px; margin-top: 14px; font-size: 12px; }
+.campus-sign-in input { min-height: 38px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 5px; color: #fff; background: var(--field); font-size: 16px; }
+.campus-sign-in .primary-button { justify-self: start; min-height: 38px; margin-top: 6px; padding: 8px 12px; font-size: 12px; }
+.campus-sign-in .campus-sync-note { margin: 0; }
+.campus-sign-in-error { margin: 0; color: #fca5a5 !important; }
+.campus-forget { margin-top: 10px; }
+.campus-file-import summary { cursor: pointer; color: var(--muted); }
+.campus-file-import { display: grid; gap: 8px; margin-top: 14px; font-size: 12px; }
+.campus-file-import input { max-width: 100%; min-height: 36px; color: #fff; }
+.campus-file-import .campus-sync-note { margin: 0; }
 .campus-sync-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; font-size: 12px; }
 .campus-sync-controls input, .campus-course-choice select { min-height: 36px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; color: #fff; background: var(--field); }
 .no-class-day { margin: 18px 0; padding: 44px 20px; border: 1px solid var(--border); border-radius: 8px; background: #2d2e33; text-align: center; }
