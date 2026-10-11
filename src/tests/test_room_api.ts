@@ -17,6 +17,8 @@ const room: LocatedRoom = {
 };
 const directory: RoomData = {
   rooms: [room], buildings: ["A"], map_revision: mapRevision, map_revision_date: "2026-09-03",
+  building_regions: { A: { polygons: [[[10, 10], [20, 10], [20, 20]]] } },
+  map_size: [2448, 1584],
 };
 const period: Period = { room: room.label, building: room.building, color: "#123456", roomId: room.id, mapRevision };
 

@@ -36,6 +36,7 @@ const currentRooms = inventory.map(room => ({ ...room, floor: room.floor ?? 1, a
 const MAP_REVISION = "test-map-current";
 const roomDirectory: RoomData = {
   rooms: currentRooms, buildings, map_revision: MAP_REVISION, map_revision_date: "2026-09-01",
+  building_regions: {}, map_size: [2448, 1584],
 };
 const { bindCurrentRooms, scheduleReview } = await import("../../web/src/features/schedule/schedule-review.js");
 const immediateLocks = { request: async (_name: string, callback: () => unknown) => callback() };
