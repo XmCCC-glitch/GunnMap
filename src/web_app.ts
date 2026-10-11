@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
-import { ROOT, rooms, buildings, roomData } from './project.js';
+import { ROOT, rooms, buildings, buildingData, roomData } from './project.js';
 import { findRoomMatches } from './domain/room-matching.js';
 import { evacuationDataIssues, evacuationOverview } from './evacuation.js';
 import { renderPeriods } from './schedule_render.js';
@@ -95,7 +95,10 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
   }
   const roomList = rooms.map(toRoomOption);
   const mapVersion = { map_revision: MAP_REVISION, map_revision_date: MAP_REVISION_DATE };
-  const roomDirectory = Buffer.from(JSON.stringify({ buildings, rooms: roomList, ...mapVersion }));
+  const roomDirectory = Buffer.from(JSON.stringify({
+    buildings, building_regions: buildingData.regions, map_size: buildingData.image_size,
+    rooms: roomList, ...mapVersion,
+  }));
   const locatedRooms = rooms.map(toLocatedRoom);
   const offlineRoomDirectory = Buffer.from(JSON.stringify({ rooms: locatedRooms, map_size: roomData.image_size, ...mapVersion }));
   // Inventory and assignments are loaded once at startup. Avoid repeating the

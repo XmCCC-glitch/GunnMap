@@ -3,6 +3,12 @@ import { buildingName } from "./room-display.js";
 import { normalizeRoomInput } from "../../../../src/domain/room-matching.js";
 import type { RoomOption } from "./types.js";
 
+export interface RoomSuggestion extends Omit<RoomOption, "floor" | "aliases"> {
+  floor?: number;
+  aliases?: string[];
+  kind?: "building";
+}
+
 interface SuggestionOptions {
   getBuilding?: () => string;
 }
@@ -12,7 +18,8 @@ interface SuggestionRecord {
   label: string;
   searchText: string;
   building: string;
-  floor: number;
+  floor?: number;
+  kind?: "building";
 }
 
 interface SelectionDetail {
@@ -21,8 +28,8 @@ interface SelectionDetail {
 
 const normalize = normalizeRoomInput;
 
-function humanAliases(room: RoomOption) {
-  return room.aliases.filter((alias) => !/^R\d{3}$/i.test(alias.trim()));
+function humanAliases(room: RoomSuggestion) {
+  return (room.aliases ?? []).filter((alias) => !/^R\d{3}$/i.test(alias.trim()));
 }
 
 function roomLabelVariant(label: string, input: string) {
@@ -32,7 +39,7 @@ function roomLabelVariant(label: string, input: string) {
   return `${parts[1]}${separator}${parts[2]}`;
 }
 
-function suggestionRecords(rooms: RoomOption[], building: string, input: string): SuggestionRecord[] {
+function suggestionRecords(rooms: RoomSuggestion[], building: string, input: string): SuggestionRecord[] {
   const eligible = rooms.filter((room) => !building || room.building === building);
   const labelCounts = new Map<string, number>();
   for (const room of eligible) {
@@ -41,6 +48,14 @@ function suggestionRecords(rooms: RoomOption[], building: string, input: string)
   }
 
   return eligible.map((room) => {
+    if (room.kind === "building") return {
+      id: room.id,
+      label: buildingName(room.building),
+      searchText: [room.building, `${room.building} building`, `${room.building} bldg`,
+        buildingName(room.building), ...(room.aliases ?? [])].join(" "),
+      building: room.building,
+      kind: "building" as const,
+    };
     const aliases = humanAliases(room);
     const locationAlias = aliases.find((alias) => /\blocation\b/i.test(alias));
     const hasDuplicateLabel = (labelCounts.get(normalize(room.label)) ?? 0) > 1;
@@ -61,7 +76,7 @@ function suggestionRecords(rooms: RoomOption[], building: string, input: string)
 
 export function mountRoomSuggestions(
   input: HTMLInputElement,
-  rooms: RoomOption[],
+  rooms: RoomSuggestion[],
   options: SuggestionOptions = {},
 ) {
   input.classList.add("room-suggestion-input");

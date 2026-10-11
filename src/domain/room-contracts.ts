@@ -15,6 +15,8 @@ export interface RoomOption {
 export interface RoomData extends MapVersion {
   rooms: RoomOption[];
   buildings: string[];
+  building_regions: Record<string, { aliases?: string[]; polygons: [number, number][][] }>;
+  map_size: [number, number];
 }
 
 export interface EvacuationInfo {

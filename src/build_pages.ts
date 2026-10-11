@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { buildings, roomData, rooms, ROOT } from "./project.js";
+import { buildings, buildingData, roomData, rooms, ROOT } from "./project.js";
 import { evacuationForRoom, evacuationOverview } from "./evacuation.js";
 import { MAP_REVISION, MAP_REVISION_DATE } from "./map_revision.js";
 
@@ -26,6 +26,8 @@ const located = rooms.map(room => ({
 await Promise.all([
   writeFile(resolve(output, "data/rooms.json"), JSON.stringify({
     buildings,
+    building_regions: buildingData.regions,
+    map_size: buildingData.image_size,
     rooms: located.map(({ id, label, building, floor, aliases }) => ({ id, label, building, floor, aliases })),
     ...mapVersion,
   })),

@@ -18,6 +18,9 @@ export interface RoomData { base_image: string; image_size: Point; rooms: Room[]
 export const roomData = readJson<RoomData>('room_regions.json');
 export const rooms = roomData.rooms;
 export const buildings = [...new Set(rooms.map(room => room.building))].sort((a,b) => a === 'BG' ? 1 : b === 'BG' ? -1 : a.localeCompare(b));
+export interface BuildingRegion { aliases?: string[]; polygons: Point[][] }
+export interface BuildingData { image_size: Point; regions: Record<string, BuildingRegion> }
+export const buildingData = readJson<BuildingData>('building_regions.json');
 export const normalize = normalizeRoomInput;
 export function resolveRoom(building: string, value: string): Room {
   const canonicalBuilding = buildings.find(candidate => normalize(candidate) === normalize(building));

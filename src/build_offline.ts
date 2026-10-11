@@ -24,6 +24,7 @@ const apiInputs = [
   'src/domain/room-contracts.ts',
   'src/project.ts',
   'src/data/room_regions.json',
+  'src/data/building_regions.json',
   'src/data/evacuation_data.json',
   'src/evacuation.ts',
   'src/validate_map_data.ts',

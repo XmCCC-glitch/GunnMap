@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { mountRoomSuggestions } from "./room-suggestions.js";
-import type { RoomOption } from "./types.js";
+import type { RoomSuggestion } from "./room-suggestions.js";
 
 interface RoomInputProps {
   id: string;
   label: string;
   value: string;
   building?: string;
-  rooms: RoomOption[];
+  rooms: RoomSuggestion[];
   placeholder: string;
   className?: string;
   disabled?: boolean;

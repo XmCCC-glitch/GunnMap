@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { RoomInput } from "../features/rooms/RoomInput.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { buildingName, roomLocationLabel } from "../features/rooms/room-display.js";
+import { buildingCenter, findBuilding, type BuildingRegions } from "../features/rooms/building-search.js";
 import { loadRoomDirectory, lookupRoom } from "../features/rooms/room-api.js";
 import { evacuationDestination } from "../features/evacuation/formatters.js";
 import type {
@@ -13,12 +14,18 @@ import { useToast } from "../shared/toast.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { siteUrl } from "../features/pages/site-data.js";
 
+function polygonClip(polygon: [number, number][], [width, height]: [number, number]) {
+  return `polygon(${polygon.map(([x, y]) => `${x / width * 100}% ${y / height * 100}%`).join(", ")})`;
+}
+
 export function FindRoomPage() {
   const showToast = useToast();
   const [input, setInput] = useState("");
   const [rooms, setRooms] = useState<RoomData["rooms"]>([]);
+  const [buildingRegions, setBuildingRegions] = useState<BuildingRegions>({});
   const [mapRevision, setMapRevision] = useState("");
   const [selectedRoom, setSelectedRoom] = useState<LocatedRoom | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<string | null>(null);
   const [choices, setChoices] = useState<LocatedRoom[]>([]);
   const [message, setMessage] = useState("");
   const [searching, setSearching] = useState(false);
@@ -27,14 +34,13 @@ export function FindRoomPage() {
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const lookupController = useRef<AbortController | null>(null);
-  const focus = selectedRoom
-    ? {
-        x: selectedRoom.marker[0] / mapSize[0],
-        y: selectedRoom.marker[1] / mapSize[1],
-        scale: 2,
-      }
-    : undefined;
-  const controls = usePanzoom(stage, art, image, { active: Boolean(selectedRoom), focus, animateFocus: true });
+  const buildingPolygons = selectedBuilding
+    ? [...(buildingRegions[selectedBuilding]?.polygons ?? []),
+      ...(selectedBuilding === "D" ? buildingRegions.LIBRARY?.polygons ?? [] : [])]
+    : [];
+  const marker = selectedRoom?.marker ?? (buildingPolygons.length ? buildingCenter(buildingPolygons) : null);
+  const focus = marker ? { x: marker[0] / mapSize[0], y: marker[1] / mapSize[1], scale: 2 } : undefined;
+  const controls = usePanzoom(stage, art, image, { active: true, focus, animateFocus: true });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,6 +48,8 @@ export function FindRoomPage() {
       .then(data => {
         if (!controller.signal.aborted) {
           setRooms(data.rooms);
+          setBuildingRegions(data.building_regions);
+          setMapSize(data.map_size);
           setMapRevision(data.map_revision);
         }
       })
@@ -60,11 +68,21 @@ export function FindRoomPage() {
   const chooseRoom = (room: LocatedRoom) => {
     setInput(roomLocationLabel(room));
     setSelectedRoom(room);
+    setSelectedBuilding(null);
     setChoices([]);
     setMessage("");
     requestAnimationFrame(() => {
       stage.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
+  };
+
+  const chooseBuilding = (code: string) => {
+    setInput(buildingName(code));
+    setSelectedBuilding(code);
+    setSelectedRoom(null);
+    setChoices([]);
+    setMessage("");
+    requestAnimationFrame(() => stage.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
   const lookup = async (event?: FormEvent<HTMLFormElement>) => {
@@ -73,16 +91,23 @@ export function FindRoomPage() {
     const query = input.trim();
     lookupController.current?.abort();
     setSelectedRoom(null);
+    setSelectedBuilding(null);
     setChoices([]);
     setMessage("");
     if (!query) {
       setSearching(false);
-      showToast("Enter a room number or alias to search.");
+      showToast("Enter a room, alias, or building to search.");
       return;
     }
     if (!mapRevision) {
       setSearching(false);
       showToast("The current room directory is not ready. Reload the page and try again.");
+      return;
+    }
+    const building = findBuilding(buildingRegions, query);
+    if (building) {
+      setSearching(false);
+      chooseBuilding(building);
       return;
     }
     setSearching(true);
@@ -96,7 +121,7 @@ export function FindRoomPage() {
       setMapSize(result.map_size);
       if (!result.rooms.length) {
         setMessage("");
-        showToast("No matching room. Check the number or choose a listed suggestion.");
+        showToast("No matching room or building. Check the name or choose a listed suggestion.");
       } else if (result.rooms.length > 1) {
         setMessage("More than one room matches. Choose the right location.");
         setChoices(result.rooms);
@@ -120,16 +145,20 @@ export function FindRoomPage() {
     lookupController.current?.abort();
     setInput(value);
     setSelectedRoom(null);
+    setSelectedBuilding(null);
     setChoices([]);
     setMessage("");
     setSearching(false);
   };
 
-  const polygonPoints = selectedRoom
-    ? selectedRoom.polygon
-        .map(([x, y]) => `${x / mapSize[0] * 100}% ${y / mapSize[1] * 100}%`)
-        .join(", ")
-    : "";
+  const highlightPolygons = selectedRoom ? [selectedRoom.polygon] : buildingPolygons;
+  const suggestions = useMemo(() => [
+    ...rooms,
+    ...Object.keys(buildingRegions).filter(code => code !== "LIBRARY").map(code => ({
+      id: `building-${code}`, label: buildingName(code), building: code,
+      aliases: buildingRegions[code].aliases, kind: "building" as const,
+    })),
+  ], [rooms, buildingRegions]);
   const roomRouteStyle = {
     "--room-route-color": evacuation?.color ?? "#f38470",
   } as CSSVariables;
@@ -139,16 +168,16 @@ export function FindRoomPage() {
       <section className="panel find-room-search" aria-labelledby="find-room-title">
         <div className="eyebrow">ROOM LOOKUP</div>
         <h1 id="find-room-title">Find a room</h1>
-        <p className="map-help">Search a room number or a familiar name, such as “library.”</p>
+        <p className="map-help">Search a room number, a familiar name such as “library,” or a whole building such as “N bldg.”</p>
         <form className="find-room-form" onSubmit={lookup}>
           <label className="field" htmlFor="find-room-input">
-            <span>Room or room alias</span>
+            <span>Room or building</span>
             <RoomInput
               id="find-room-input"
-              label="Room or room alias"
+              label="Room or building"
               value={input}
-              rooms={rooms}
-              placeholder="e.g. A134 or library"
+              rooms={suggestions}
+              placeholder="e.g. A134, library, or N bldg"
               onValueChange={handleInputChange}
             />
           </label>
@@ -157,7 +186,7 @@ export function FindRoomPage() {
             type="submit"
             disabled={searching}
           >
-            {searching ? "Searching…" : "Find room"}
+            {searching ? "Searching…" : "Find location"}
           </button>
         </form>
         <p
@@ -187,7 +216,7 @@ export function FindRoomPage() {
         )}
       </section>
 
-      {selectedRoom && evacuation && (
+      {(selectedRoom || selectedBuilding) && (
         <div className="find-room-result">
           <section
             className="panel find-room-details"
@@ -196,20 +225,24 @@ export function FindRoomPage() {
             <div className="room-lookup-heading">
               <div>
                 <span className="eyebrow">
-                  {buildingName(selectedRoom.building)}
+                  {buildingName(selectedRoom?.building ?? selectedBuilding!)}
                 </span>
-                <h2 id="room-result-title">{selectedRoom.label}</h2>
+                <h2 id="room-result-title">{selectedRoom?.label ?? "Whole building"}</h2>
               </div>
-              <span className="room-lookup-floor">
+              {selectedRoom && <span className="room-lookup-floor">
                 {selectedRoom.floor === 2 ? "2nd floor" : "1st floor"}
-              </span>
+              </span>}
             </div>
-            <p className="room-lookup-destination">{destination}</p>
-            <p className="map-help">{evacuation.note}</p>
-            <p className="find-room-disclaimer">
+            {selectedRoom && evacuation && <>
+              <p className="room-lookup-destination">{destination}</p>
+              <p className="map-help">{evacuation.note}</p>
+              <p className="find-room-disclaimer">
               Reference only. Follow current school staff directions during an emergency.
-            </p>
+              </p>
+            </>}
           </section>
+        </div>
+      )}
           <section
             className="panel find-room-map"
             aria-labelledby="room-map-title"
@@ -251,32 +284,28 @@ export function FindRoomPage() {
                 <img
                   ref={image}
                   src={siteUrl("/map.webp")}
-                  alt={`Gunn campus map with ${selectedRoom.label} highlighted`}
+                  alt="Gunn campus map"
                 />
-                <span
+                {highlightPolygons.map((polygon, index) => <span
+                  key={index}
                   className="room-locator-highlight"
-                  style={{
-                    clipPath: `polygon(${polygonPoints})`,
-                    ...roomRouteStyle,
-                  }}
+                  style={{ clipPath: polygonClip(polygon, mapSize), ...roomRouteStyle }}
                   aria-hidden="true"
-                />
-                <span
+                />)}
+                {marker && <span
                   className="room-locator-label"
                   style={{
-                    left: `${selectedRoom.marker[0] / mapSize[0] * 100}%`,
-                    top: `${selectedRoom.marker[1] / mapSize[1] * 100}%`,
+                    left: `${marker[0] / mapSize[0] * 100}%`,
+                    top: `${marker[1] / mapSize[1] * 100}%`,
                     ...roomRouteStyle,
                   }}
                   aria-hidden="true"
                 >
-                  {selectedRoom.label}
-                </span>
+                  {selectedRoom?.label ?? buildingName(selectedBuilding!)}
+                </span>}
               </div>
             </div>
           </section>
-        </div>
-      )}
     </main>
   );
 }
