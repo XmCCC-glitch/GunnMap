@@ -9,6 +9,7 @@ import { buildingName } from "../features/rooms/room-display.js";
 import type { EvacuationOverview, ScheduleEvacuationEntry, LocatedScheduleEntry } from "../features/evacuation/types.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
+import { siteUrl } from "../features/pages/site-data.js";
 
 function entryRoute(entry: ScheduleEvacuationEntry) {
   switch (entry.status) {
@@ -162,7 +163,7 @@ export function EvacuationPage() {
             >
               <span className="evacuation-map-art">
                 <img
-                src="/map.webp"
+                src={siteUrl("/map.webp")}
                   alt="Gunn school site map dated September 3, 2026, without evacuation routes. Open the map to zoom and pan."
                 />
               </span>
@@ -345,7 +346,7 @@ export function EvacuationPage() {
           <div ref={viewerArt} className="evacuation-map-art">
             <img
               ref={viewerImage}
-              src="/map.webp"
+              src={siteUrl("/map.webp")}
               alt="Gunn school site map dated September 3, 2026, without evacuation routes."
             />
             {markerEntries.length > 0 && (

@@ -2,12 +2,12 @@ import { Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import type { MouseEvent } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { OfflineStatus } from "../features/offline/OfflineStatus.js";
+import { isPages } from "../features/pages/site-data.js";
 
 const navigation = [
   { to: "/", title: "Schedule Map", icon: "campus" },
   { to: "/evacuation", title: "Evacuation Status", icon: "routes" },
   { to: "/find-room", title: "Find a Room", icon: "search" },
-  { to: "/generate-map", title: "Generated Map", icon: "generated-map" },
 ];
 
 export function SiteShell() {
@@ -94,7 +94,7 @@ export function SiteShell() {
         ))}
       </nav>
       <div className="app-content">
-        <OfflineStatus />
+        {!isPages && <OfflineStatus />}
         <Suspense fallback={<main id="main-content" className="panel"><p role="status">Loading page…</p></main>}>
           <Outlet />
         </Suspense>

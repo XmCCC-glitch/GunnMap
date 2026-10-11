@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import Panzoom from "@panzoom/panzoom";
+import Panzoom from "@panzoom/panzoom/dist/panzoom.es.js";
 import { setBoundedImageTransform } from "./map-pan-bounds.js";
 import { handleMapKeydown } from "./map-keyboard.js";
 

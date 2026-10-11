@@ -5,7 +5,7 @@ import { xml } from './map_highlighter.js';
 import { ROOT } from './project.js';
 
 interface LegendItem {
-  period: number;
+  period: number | string;
   label: string;
   floor: number;
   color: string;
@@ -24,13 +24,13 @@ export async function addScheduleLegend(image: Buffer, selected: readonly Legend
   const top = height - legendHeight - padding;
   const replacements: Record<string, string> = { HEIGHT: String(legendHeight) };
 
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     const item = selected[index];
     const row = index + 1;
     replacements[`ROW_${row}_DISPLAY`] = item ? 'inline' : 'none';
     replacements[`ROW_${row}_COLOR`] = item ? xml(item.color) : '#000000';
     replacements[`ROW_${row}_LABEL`] = item
-      ? xml(`Period ${item.period} · ${item.label}${item.floor === 2 ? ' (2F)' : ''}`)
+      ? xml(`${typeof item.period === 'number' ? `Period ${item.period}` : item.period} · ${item.label}${item.floor === 2 ? ' (2F)' : ''}`)
       : '';
   }
 

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "npm run build:web && node --import tsx src/web_app.ts",
     "build:web": "tsc --noEmit -p tsconfig.web.json && tsc -p tsconfig.worker.json && vite build && node --import tsx src/build_map_assets.ts && node --import tsx src/build_offline.ts",
+    "build:pages": "npm run data:validate && VITE_PAGES=true npm run build:web && node --import tsx src/build_pages.ts",
     "prebuild": "npm run data:validate",
     "build": "tsc && npm run build:web",
     "start": "node dist/src/web_app.js",

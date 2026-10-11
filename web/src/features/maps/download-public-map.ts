@@ -1,10 +1,12 @@
+import { siteUrl } from "../pages/site-data.js";
+
 /** Encode the lossless display copy on demand, including when it is cached offline. */
 export async function downloadPublicMap(path: '/map.webp' | '/evacuation-map.webp', filename: string): Promise<void> {
   const controller = new AbortController();
   const deadline = window.setTimeout(() => controller.abort(), 10_000);
   let bytes: Blob;
   try {
-    const response = await fetch(path, { credentials: 'omit', signal: controller.signal });
+    const response = await fetch(siteUrl(path), { credentials: 'omit', signal: controller.signal });
     if (!response.ok) throw new Error('The map is not available yet. Wait for it to load and try again.');
     bytes = await response.blob();
   } finally {

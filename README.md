@@ -27,6 +27,16 @@ An unofficial campus map for Henry M. Gunn High School. The React browser app, N
 
 ## Run
 
+### GitHub Pages
+
+The `github-page-10/6` branch builds a static version at `https://xmccc-glitch.github.io/GunnMap/` through `.github/workflows/pages.yml`. In repository **Settings → Pages**, set **Build and deployment → Source** to **GitHub Actions**. Pushing that branch then builds and deploys the site. To verify the artifact locally, run `npm run build:pages` and serve `dist/web` under `/GunnMap/`.
+
+### Optional Infinite Campus connector
+
+Start the local companion service in `../infinite-campus-mcp` with `.venv/bin/python server.py --http`. On the Schedule Map homepage, select **Connect Infinite Campus** and complete sign-in on the official school page. The companion service stores the school session locally and exposes the current term's period JSON only on `127.0.0.1:8765`. GunnMap refreshes this JSON when the page opens or regains focus, fills active numeric periods for the selected date, and shows PRIME/SELF/Study Hall placements separately. Use **Open Responsive Schedule** to choose those sessions on Infinite Campus; returning to GunnMap refreshes the selected placement. **Download period JSON** saves a copy explicitly. The Pages site draws the map in the browser, including rooms for selected responsive sessions, and displays it below the editor.
+
+The Pages build includes the current room directory, room search, evacuation status, and browser-generated schedule PNGs. Schedule drafts and generated images stay in the browser; no Node API or image store runs on GitHub Pages. Generated images can be downloaded, but the Pages version does not offer the server version's offline save and service worker. The browser build is mounted under `/GunnMap/` and includes entry points for direct visits to each client route.
+
 Install Node.js 22.12 or newer, then:
 
 ```sh
@@ -57,7 +67,7 @@ Route pages compose feature components and hooks. Schedule editing, history, ren
 
 Enter a room and choose a color for each of seven periods. A recognized room label or alias selects its building automatically. Matching ignores case, spaces, Unicode hyphens, and full-width characters, so `A134`, `a-134`, and `Ａ１３４` resolve to the same room. Room inputs use the themed, accessible autocomplete component, with human-readable labels and no internal IDs; duplicate labels use location aliases. Missing and ambiguous matches appear beside the relevant input with choices where available. Generate Map focuses the first unresolved room. Periods can be left blank.
 
-Generate Map creates a downloadable PNG and opens `/generate-map` with that exact image. Panzoom handles dragging, mouse-wheel zoom, and touch gestures while keeping the image within the viewer. The separate Campus Map & Evacuation Status page shows the current school map and marks evacuation assignments unconfirmed. If several periods share a room, the PNG map highlight shows every period color.
+Generate Map creates a downloadable PNG below the editor on Schedule Map. Existing `/generate-map` links still open previously saved images. Panzoom handles dragging, mouse-wheel zoom, and touch gestures while keeping the image within the viewer. The separate Campus Map & Evacuation Status page shows the current school map and marks evacuation assignments unconfirmed. If several periods share a room, the PNG map highlight shows every period color.
 
 Editing the schedule or leaving the editor cancels its pending generation request and image load. A 60-second deadline covers the request, response parsing, and image decoding; timeout restores the Generate Map button and prompts a retry. Late responses cannot open an obsolete preview. Disconnecting cancels queued server work and prevents a cancelled render from publishing its output; a Sharp operation already in progress may finish before the next cancellation check.
 
@@ -83,7 +93,7 @@ The separate Find a Room page supports a room number or familiar aliases such as
 
 All map viewers include visible zoom and reset controls. When the map is focused, use +/− to zoom, arrow keys to pan, and Home or 0 to reset.
 
-The navigation links to Schedule Map, Evacuation Status, Find a Room, and Generated Map. On narrow screens, the GunnMap brand scrolls away while the navigation remains available. Switching pages preserves the brand's current position: if it is fully visible, partly visible, or hidden, it stays in that state on the next page, including when that page is too short to scroll naturally. Scrolling back toward the top reveals it. Page cards share the same border, width, and outer gutter. The assembly-status heading moves above its cards when the available width is limited. At widths up to 430 px, building selection is created only when the manual-building control is opened; room auto-detection remains the default. The site includes a web app manifest and install icons for supported browsers.
+The navigation links to Schedule Map, Evacuation Status, and Find a Room. On narrow screens, the GunnMap brand scrolls away while the navigation remains available. Switching pages preserves the brand's current position: if it is fully visible, partly visible, or hidden, it stays in that state on the next page, including when that page is too short to scroll naturally. Scrolling back toward the top reveals it. Page cards share the same border, width, and outer gutter. The assembly-status heading moves above its cards when the available width is limited. At widths up to 430 px, building selection is created only when the manual-building control is opened; room auto-detection remains the default. The site includes a web app manifest and install icons for supported browsers.
 
 ### Offline use
 

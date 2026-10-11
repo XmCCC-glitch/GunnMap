@@ -9,11 +9,15 @@ import type { RoomData } from "../domain/room-contracts.js";
 // Mount the shipped React components and autocomplete implementation. Only
 // browser primitives missing in jsdom and external I/O are substituted.
 const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: "http://localhost/", pretendToBeVisual: true });
-for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "HTMLDialogElement", "CustomEvent", "Event", "Node", "DocumentFragment", "sessionStorage", "getComputedStyle"] as const) {
+for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "HTMLDialogElement", "CustomEvent", "Event", "Node", "NodeList", "DocumentFragment", "sessionStorage", "getComputedStyle"] as const) {
   Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
 }
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
 Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: (callback: FrameRequestCallback) => dom.window.requestAnimationFrame(callback) });
+Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
+  observe() {}
+  disconnect() {}
+} });
 dom.window.HTMLElement.prototype.scrollIntoView = function () { this.dataset.scrolled = "true"; };
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () {
@@ -231,7 +235,7 @@ test("real React rows resolve merged K5 and the remaining K6, and focus invalid 
     assert.equal(h.requests.length, 1);
     assert.equal(h.requests[0][0].building, "N");
     assert.equal(h.requests[0][1].building, "D");
-    assert.ok(h.get("#generated-page"));
+    assert.ok(h.get(".generated-map-result"));
   } finally { await h.close(); }
 });
 
@@ -284,7 +288,7 @@ test("render API rejection displays its error and leaves the same schedule ready
     await h.submit();
     assert.equal(h.requests.length, 2);
     assert.deepEqual(h.requests[1], h.requests[0]);
-    assert.ok(h.get("#generated-page"));
+    assert.ok(h.get(".generated-map-result"));
   } finally { await h.close(); }
 });
 
@@ -299,7 +303,7 @@ test("editing or leaving the React schedule page aborts requests and discards pe
     await h.input("N214");
     assert.equal(h.renderSignals[0].aborted, true);
     await act(async () => { pending.resolve(response({ image_url: "/output/stale.png" })); await tick(); });
-    assert.equal(document.querySelector("#generated-page"), null);
+    assert.equal(document.querySelector(".generated-map-result"), null);
     assert.equal(sessionStorage.getItem(storage.GENERATED_MAP_SESSION_KEY), null);
     const leaving = deferred<Response>();
     h.io.render = () => leaving.promise;
@@ -323,7 +327,7 @@ test("undo while a rendered image decodes prevents stale navigation", async () =
     assert.equal(h.renderSignals[0].aborted, true);
     assert.equal(h.images[0].src, "", "cancel the obsolete image load as well");
     await act(async () => { decode.resolve(); await tick(); });
-    assert.equal(document.querySelector("#generated-page"), null);
+    assert.equal(document.querySelector(".generated-map-result"), null);
     assert.equal(h.get<HTMLInputElement>("#period-1-room").value, "M3");
     assert.equal(sessionStorage.getItem(storage.GENERATED_MAP_SESSION_KEY), null);
   } finally { await h.close(); }
@@ -341,11 +345,11 @@ test("a timed-out render unlocks retry and cannot navigate after a late response
     assert.match(h.get(".toast-region").textContent!, /took too long.*try again/i);
     assert.equal(h.get<HTMLButtonElement>('form[aria-busy] button[type="submit"]').disabled, false);
     await act(async () => { pending.resolve(response({ image_url: "/output/stale.png" })); await tick(); });
-    assert.equal(document.querySelector("#generated-page"), null);
+    assert.equal(document.querySelector(".generated-map-result"), null);
     assert.equal(h.images.length, 0, "an aborted response must not start downloading an image");
     h.io.render = async () => response({ image_url: "/output/period_map_33333333333333333333333333333333.png" });
     await h.submit();
-    assert.ok(h.get("#generated-page"));
+    assert.ok(h.get(".generated-map-result"));
   } finally { context.mock.timers.reset(); await h.close(); }
 });
 
@@ -360,7 +364,7 @@ test("the render deadline also bounds a stuck image decode", async context => {
     assert.equal(h.images[0].src, "");
     assert.equal(h.get<HTMLButtonElement>('form[aria-busy] button[type="submit"]').disabled, false);
     await act(async () => { decode.resolve(); await tick(); });
-    assert.equal(document.querySelector("#generated-page"), null);
+    assert.equal(document.querySelector(".generated-map-result"), null);
     assert.equal(sessionStorage.getItem(storage.GENERATED_MAP_SESSION_KEY), null);
   } finally { context.mock.timers.reset(); await h.close(); }
 });
@@ -448,7 +452,7 @@ test("editing enables a fresh generation while a superseded request is still pen
     const currentUrl = "/output/period_map_22222222222222222222222222222222.png";
     h.io.render = async () => response({ image_url: currentUrl });
     await h.submit();
-    assert.ok(h.get("#generated-page"));
+    assert.ok(h.get(".generated-map-result"));
     await act(async () => { older.resolve(response({ error: "Old request failed" }, false)); await tick(); });
     assert.equal(sessionStorage.getItem(storage.GENERATED_MAP_SESSION_KEY), currentUrl);
     assert.doesNotMatch(h.get(".toast-region").textContent!, /Old request/);

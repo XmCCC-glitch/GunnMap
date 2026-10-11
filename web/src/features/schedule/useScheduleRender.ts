@@ -6,6 +6,14 @@ import { GENERATED_MAP_SESSION_KEY, flushPendingDraft } from "./schedule-storage
 import { periodRoomState } from "./room-validation.js";
 import { runRenderRequest } from "./render-request.js";
 import type { Period } from "./types.js";
+import { isPages } from "../pages/site-data.js";
+
+interface RenderOptions {
+  visibleNumbers?: number[];
+  extras?: Array<Period & { name: string }>;
+  mapRevision?: string;
+  onGenerated?(imageUrl: string): void;
+}
 
 interface ActiveRender {
   revision: number;
@@ -57,7 +65,7 @@ export function useScheduleRender(showToast: (message: string) => void) {
     activeRender.current = null;
   }, []);
 
-  async function generate(periods: Period[], rooms: RoomOption[], requiresReview: boolean, form: HTMLFormElement | null) {
+  async function generate(periods: Period[], rooms: RoomOption[], requiresReview: boolean, form: HTMLFormElement | null, options: RenderOptions = {}) {
     flushPendingDraft();
     if (requiresReview) {
       setValidationMessage("Confirm the restored room choices against the current map before generating.");
@@ -66,7 +74,10 @@ export function useScheduleRender(showToast: (message: string) => void) {
     }
     if (activeRender.current?.revision === revision.current) return activeRender.current.promise;
     invalidate();
-    const invalid = periods
+    const visibleNumbers = options.visibleNumbers ?? [1, 2, 3, 4, 5, 6, 7];
+    const mapPeriods = periods.map((period, index) => visibleNumbers.includes(index + 1)
+      ? period : { ...period, room: "", building: "" });
+    const invalid = mapPeriods
       .map((period, index) => ({ index, ...periodRoomState(period, rooms) }))
       .filter(item => item.invalid);
     if (invalid.length) {
@@ -77,6 +88,12 @@ export function useScheduleRender(showToast: (message: string) => void) {
       input?.scrollIntoView({ behavior: "smooth", block: "center" });
       return false;
     }
+    const invalidExtra = options.extras?.findIndex(extra => periodRoomState(extra, rooms).invalid) ?? -1;
+    if (invalidExtra >= 0) {
+      setValidationMessage(`Check ${options.extras![invalidExtra].name}. Choose a recognized room before generating.`);
+      form?.querySelector<HTMLInputElement>(`#responsive-${invalidExtra}-room`)?.focus();
+      return false;
+    }
 
     setRendering(true);
     const requestRevision = revision.current;
@@ -85,34 +102,44 @@ export function useScheduleRender(showToast: (message: string) => void) {
       revision: requestRevision,
       controller,
       promise: runRenderRequest(controller, async signal => {
-        const response = await fetch("/api/render", {
-          method: "POST",
-          credentials: "omit",
-          signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ periods: periods.map(period => ({
+        const extras = (options.extras ?? []).filter(period => period.room.trim()).slice(0, 3).map(period => ({
+          name: period.name, room: period.room.trim(),
+          building: findRoomMatches(rooms, period.room, period.building)[0].building,
+          color: period.color,
+          roomId: findRoomMatches(rooms, period.room, period.building)[0].id,
+          mapRevision: options.mapRevision,
+        }));
+        const normalized = mapPeriods.map(period => ({
             ...period,
             room: period.room.trim(),
             building: period.room.trim()
               ? findRoomMatches(rooms, period.room, period.building)[0].building
               : "",
-          })) }),
-        });
-        if (!response.ok) {
-          const result = await response.json() as { error: string };
-          throw new Error(result.error);
-        }
-        const { image_url: imageUrl } = await response.json() as { image_url: string };
+          }));
+        const imageUrl = isPages
+          ? await import("../pages/render-map.js").then(module => module.renderPagesMap(normalized, extras))
+          : await (async () => {
+              const response = await fetch("/api/render", {
+                method: "POST", credentials: "omit", signal,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ periods: normalized, extras }),
+              });
+              const result = await response.json() as { image_url?: string; error?: string };
+              if (!response.ok || !result.image_url) throw new Error(result.error ?? "Map generation failed.");
+              return result.image_url;
+            })();
         signal.throwIfAborted();
         if (requestRevision !== revision.current) return false;
         await decodeRenderedImage(imageUrl, signal);
         if (requestRevision !== revision.current) return false;
+        if (isPages && imageUrl.length >= 8_000_000) throw new Error("The generated map is too large for this browser. Try fewer rooms.");
         try {
           sessionStorage.setItem(GENERATED_MAP_SESSION_KEY, imageUrl);
         } catch {
           // The route carries the exact image URL when storage is disabled.
         }
-        navigate(`/generate-map?image=${encodeURIComponent(imageUrl)}`);
+        if (options.onGenerated) options.onGenerated(imageUrl);
+        else navigate(`/generate-map?image=${encodeURIComponent(imageUrl)}`);
         return true;
       }).catch(error => {
         const timedOut = controller.signal.reason instanceof Error && controller.signal.reason.name === "TimeoutError";

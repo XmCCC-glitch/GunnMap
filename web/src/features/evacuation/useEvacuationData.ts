@@ -4,6 +4,7 @@ import type { RoomLookupResponse } from "../rooms/types.js";
 import { readCurrentSchedule } from "../schedule/schedule-storage.js";
 import { scheduleReview } from "../schedule/schedule-review.js";
 import type { Period } from "../schedule/types.js";
+import { isPages, loadEvacuation } from "../pages/site-data.js";
 import type {
   EvacuationOverview,
   ScheduleEvacuationEntry,
@@ -86,11 +87,11 @@ export function useEvacuationData() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/evacuation-data", { credentials: "omit", signal: controller.signal })
+    void (isPages ? loadEvacuation() : fetch("/api/evacuation-data", { credentials: "omit", signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error("Evacuation data is unavailable.");
         return await response.json() as EvacuationOverview;
-      })
+      }))
       .then(data => {
         if (!controller.signal.aborted) setOverview(data);
       })

@@ -43,6 +43,20 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .shared-preview-banner { margin: 14px 0; padding: 14px; border: 1px solid #ac7866; border-radius: 6px; background: #3b302e; font-size: 13px; line-height: 1.7; }
 .shared-preview-banner p { margin-bottom: 10px; }
 .shared-preview-banner button { margin: 4px 8px 4px 0; }
+.campus-sync { margin: 18px 0; padding: 16px; border: 1px solid #665956; border-radius: 8px; background: #302b2c; }
+.campus-sync-heading, .campus-responsive { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.campus-sync h3 { font-size: 16px; }
+.campus-sync p, .campus-sync-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.campus-sync-heading .primary-button { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+.campus-sync-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; font-size: 12px; }
+.campus-sync-controls input, .campus-course-choice select { min-height: 36px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; color: #fff; background: var(--field); }
+.campus-course-choice { display: grid; gap: 5px; margin-top: 12px; font-size: 12px; }
+.campus-responsive { margin-top: 16px; padding-top: 14px; border-top: 1px solid #ffffff22; }
+.campus-responsive strong { font-size: 13px; }
+.campus-responsive .download-link { font-size: 12px; }
+.campus-period-details { margin: 10px 0 0; padding-left: 19px; color: #e6dede; font-size: 12px; line-height: 1.7; }
+.campus-other-periods { margin-top: 12px; color: var(--muted); font-size: 12px; }
+.period-campus-course { grid-column: 2 / -1; color: #e8b8ae; font-size: 11px; line-height: 1.5; }
 
 /* The brand scrolls with the page; only the page links remain pinned on phones. */
 .site-sidebar {
@@ -205,6 +219,9 @@ wa-tooltip::part(content) { white-space: pre-line; }
 .editor-options .template-controls label { padding-top: 3px; }
 .period-list { display: grid; gap: 9px; margin-top: 17px; }
 .period-card { display: grid; grid-template-columns: 38px minmax(65px, .75fr) minmax(110px, 1.2fr) 30px; grid-template-areas: "number room building color"; align-items: center; gap: 9px; padding: 10px; border: 1px solid #ffffff12; border-radius: 7px; background: #303034; box-shadow: inset 0 1px #ffffff05; }
+.period-card.period-card--responsive { grid-template-columns: 82px minmax(65px, .75fr) minmax(110px, 1.2fr) 30px; }
+.period-number--responsive strong { max-width: 100%; font-size: 12px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+.campus-json-action { display: flex; justify-content: flex-end; margin-top: 10px; }
 .period-card:focus-within { border-color: #d28675; background: #353236; box-shadow: 0 0 0 2px #e7897022; }
 .period-number { grid-area: number; display: flex; flex-direction: column; justify-content: center; align-items: center; align-self: stretch; gap: 3px; border-left: 2px solid var(--period-accent, #f38470); }
 .period-number span { font-size: 7px; font-weight: 650; letter-spacing: .06em; color: #c0c0c8; }
@@ -241,6 +258,9 @@ wa-tooltip::part(content) { white-space: pre-line; }
 .download-link:hover:not(.is-disabled) { background: #46464c; border-color: #9e817c; }
 .download-link.is-disabled { color: #91919d; border-color: #49494f; }
 .generated-map-layout { display: grid; }
+.generated-map-result { min-width: 0; scroll-margin-top: 24px; }
+.generated-map-inline { min-height: 0; }
+.generated-map-inline h2 { margin-top: 5px; font-size: clamp(22px, 2.5vw, 30px); }
 .generated-map-panel { display: flex; min-height: min(900px, calc(100dvh - 120px)); flex-direction: column; }
 .generated-map-panel h1 { margin-top: 5px; font-size: clamp(22px, 2.5vw, 30px); letter-spacing: -.04em; }
 .generated-map-actions { display: flex; align-items: center; gap: 8px; }
@@ -523,6 +543,7 @@ dialog.evacuation-map-dialog:not([open]) { display: none; }
     grid-template-areas: "number room color";
     gap: 8px;
   }
+  .period-card.period-card--responsive { grid-template-columns: 80px minmax(0, 1fr) 40px; }
   .field-building { display: none; }
 }
 @media (min-width: 1251px) {

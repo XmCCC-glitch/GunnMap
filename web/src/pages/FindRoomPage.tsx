@@ -11,6 +11,7 @@ import type {
 } from "../features/rooms/types.js";
 import { useToast } from "../shared/toast.js";
 import type { CSSVariables } from "../shared/css-types.js";
+import { siteUrl } from "../features/pages/site-data.js";
 
 export function FindRoomPage() {
   const showToast = useToast();
@@ -249,7 +250,7 @@ export function FindRoomPage() {
               <div ref={art} className="room-locator-art">
                 <img
                   ref={image}
-                  src="/map.webp"
+                  src={siteUrl("/map.webp")}
                   alt={`Gunn campus map with ${selectedRoom.label} highlighted`}
                 />
                 <span

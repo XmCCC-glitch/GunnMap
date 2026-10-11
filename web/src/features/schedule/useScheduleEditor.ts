@@ -234,10 +234,15 @@ export function useScheduleEditor(
       : "Schedule cleared, but the saved draft could not be removed.");
   }
 
+  function syncCampus(next: Period[]) {
+    if (sharedPreview) return;
+    replace(bindCurrentRooms(next, rooms, mapRevision), { preview: false, persistDraft: true });
+  }
+
   return {
     periods, sharedPreview, review, templates, selectedTemplate,
     canUndo: history.canUndo, canRedo: history.canRedo, undo: history.undo, redo: history.redo,
     edit, useShared, confirmRooms, savePreviewToDevice, returnToLocalDraft,
-    saveTemplate, loadTemplate, deleteTemplate, loadExample, clearSchedule,
+    saveTemplate, loadTemplate, deleteTemplate, loadExample, clearSchedule, syncCampus,
   };
 }

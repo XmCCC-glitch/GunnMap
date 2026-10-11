@@ -13,11 +13,45 @@ interface RenderOptions {
   store?: GeneratedMapStore;
   signal?: AbortSignal;
   requireIdentity?: boolean;
+  extras?: unknown;
 }
 
 interface SelectedPeriod extends Omit<LocatedRoom, 'aliases'> {
-  period: number;
+  period: number | string;
   color: string;
+}
+
+function selectedExtras(extras: unknown, requireIdentity: boolean): SelectedPeriod[] {
+  if (extras === undefined) return [];
+  if (!Array.isArray(extras) || extras.length > 3) {
+    throw new HttpError(400, 'Submit at most three responsive periods');
+  }
+  return extras.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Invalid responsive period');
+    const extra = value as Record<string, unknown>;
+    if (typeof extra.name !== 'string' || typeof extra.room !== 'string'
+      || typeof extra.building !== 'string' || typeof extra.color !== 'string') {
+      throw new HttpError(400, 'Invalid responsive period details');
+    }
+    const name = extra.name.trim();
+    const roomName = extra.room.trim();
+    const building = extra.building.trim().toUpperCase();
+    const color = extra.color.trim();
+    if (!/^[A-Za-z0-9 _/-]{1,32}$/.test(name) || !roomName || !building || !/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new HttpError(400, 'Invalid responsive period details');
+    }
+    const identityError = () => new HttpError(409, `${name}: The campus map or room identity changed. Reload and review your room choice.`);
+    if ((extra.mapRevision !== undefined && extra.mapRevision !== MAP_REVISION)
+      || (requireIdentity && (extra.mapRevision !== MAP_REVISION || typeof extra.roomId !== 'string' || !extra.roomId))) {
+      throw identityError();
+    }
+    let room;
+    try { room = resolveRoom(building, roomName); }
+    catch (error) { throw new HttpError(400, `${name}: ${(error as Error).message}`); }
+    if (extra.roomId !== undefined && extra.roomId !== room.id) throw identityError();
+    const { aliases: _aliases, ...location } = toLocatedRoom(room);
+    return { ...location, period: name, color };
+  });
 }
 
 function selectedPeriods(periods: unknown, requireIdentity: boolean): SelectedPeriod[] {
@@ -81,7 +115,10 @@ export async function renderPeriods(
   outputDir = resolve(ROOT, 'output'),
   options: RenderOptions = {},
 ) {
-  const selected = selectedPeriods(periods, options.requireIdentity === true);
+  const selected = [
+    ...selectedPeriods(periods, options.requireIdentity === true),
+    ...selectedExtras(options.extras, options.requireIdentity === true),
+  ];
   const colors: Record<string, string[]> = {};
   for (const period of selected) (colors[period.id] ??= []).push(period.color);
   const warnings = duplicateRoomWarnings(selected);

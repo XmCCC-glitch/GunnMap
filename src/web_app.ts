@@ -123,6 +123,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
             (body as { periods?: unknown }).periods, outputDir, {
               store: mapStore, signal: controller.signal,
               requireIdentity: req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined,
+              extras: (body as { extras?: unknown }).extras,
             },
           ), controller.signal);
           if (!res.destroyed) return send(res, 200, JSON.stringify(result));

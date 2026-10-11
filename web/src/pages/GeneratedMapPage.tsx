@@ -6,20 +6,28 @@ import { generatedMapMetadata, removeOfflineMap, savedOfflineMapInfo, saveMapOff
 import { GENERATED_IMAGE } from "../../offline/policy.js";
 import { loadRoomDirectory } from "../features/rooms/room-api.js";
 import { useToast } from "../shared/toast.js";
+import { isPages } from "../features/pages/site-data.js";
 
-function savedImagePath() {
+const pagesImagePattern = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+const isValidImage = (value: string) => GENERATED_IMAGE.test(value)
+  || (isPages && value.length < 8_000_000 && pagesImagePattern.test(value));
+
+export function savedImagePath() {
   try {
     const saved = window.sessionStorage.getItem(GENERATED_MAP_SESSION_KEY) ?? "";
-    return GENERATED_IMAGE.test(saved) ? saved : "";
+    return isValidImage(saved) ? saved : "";
   } catch {
     return "";
   }
 }
 
 export function GeneratedMapPage() {
-  const showToast = useToast();
   const [searchParams] = useSearchParams();
-  const queryImage = searchParams.get("image") ?? "";
+  return <GeneratedMapPanel requestedImage={searchParams.get("image") ?? ""} />;
+}
+
+export function GeneratedMapPanel({ requestedImage = "", embedded = false }: { requestedImage?: string; embedded?: boolean }) {
+  const showToast = useToast();
   const [failed, setFailed] = useState(false);
   const [offlinePath, setOfflinePath] = useState("");
   const [offlineInfo, setOfflineInfo] = useState<SavedOfflineMap | null>(null);
@@ -30,14 +38,14 @@ export function GeneratedMapPage() {
   const stage = useRef<HTMLDivElement>(null);
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
-  const validQueryImage = GENERATED_IMAGE.test(queryImage);
+  const validQueryImage = isValidImage(requestedImage);
   const imagePath = savedImagePath();
-  const invalidQueryImage = Boolean(queryImage && !validQueryImage);
-  const source = invalidQueryImage ? "" : queryImage || imagePath || offlinePath;
+  const invalidQueryImage = Boolean(requestedImage && !validQueryImage);
+  const source = invalidQueryImage ? "" : requestedImage || (embedded ? "" : imagePath || offlinePath);
 
   useEffect(() => {
     let current = true;
-    void savedOfflineMapInfo()
+    if (!isPages) void savedOfflineMapInfo()
       .then(info => {
         if (current) {
           setOfflineInfo(info);
@@ -48,7 +56,7 @@ export function GeneratedMapPage() {
         if (current) showToast("The saved offline map could not be checked.");
       });
     const controller = new AbortController();
-    void loadRoomDirectory(controller.signal)
+    if (!isPages) void loadRoomDirectory(controller.signal)
       .then(data => {
         if (current) setCurrentRevision(data.map_revision);
       })
@@ -67,7 +75,7 @@ export function GeneratedMapPage() {
 
   useEffect(() => {
     setMetadata(null);
-    if (!source) return;
+    if (!source || isPages) return;
     if (offlineInfo?.path === source) {
       setMetadata(offlineInfo);
       return;
@@ -116,7 +124,7 @@ export function GeneratedMapPage() {
   }
 
   return (
-    <main id="main-content" className="generated-map-layout" tabIndex={-1}>
+    <div id={embedded ? undefined : "main-content"} className="generated-map-layout" tabIndex={-1}>
       <section className="panel generated-map-panel" aria-labelledby="generated-map-title">
         <div className="panel-heading">
           <div>
@@ -132,17 +140,17 @@ export function GeneratedMapPage() {
               >
                 Download PNG
               </a>
-              <Link className="download-link" to="/">
+              {!embedded && <Link className="download-link" to="/">
                 Edit schedule
-              </Link>
-              <button type="button" className="download-link" disabled={saving} onClick={() => void changeOfflineCopy()}>
+              </Link>}
+              {!isPages && <button type="button" className="download-link" disabled={saving} onClick={() => void changeOfflineCopy()}>
                 {saving ? "Saving…" : source === offlinePath ? "Remove offline copy" : "Save offline"}
-              </button>
+              </button>}
             </div>
           )}
         </div>
         <p className="offline-map-message" role="status">{offlineMessage || (source && source === offlinePath ? "This map is saved offline on this device." : "")}</p>
-        {source && !failed && <div className="map-version-status" role="status">
+        {!isPages && source && !failed && <div className="map-version-status" role="status">
           <p>{metadata?.mapRevision && currentRevision
             ? metadata.mapRevision === currentRevision ? "This map uses the current campus map and room directory." : "This map uses an older campus map or room directory. Review your rooms before using it."
             : "This map's version could not be confirmed. Review your rooms and regenerate to use the current campus map."}</p>
@@ -184,12 +192,12 @@ export function GeneratedMapPage() {
                 ? "This image is unavailable or has expired. Generate a new map from your schedule."
                 : "Generate a map from your schedule to view it here."}</p>
             {failed && offlinePath && offlinePath !== source && <Link className="download-link" to={`/generate-map?image=${encodeURIComponent(offlinePath)}`}>View previously saved offline map</Link>}
-            <Link className="primary-button" to="/">
+            {!embedded && <Link className="primary-button" to="/">
               Go to Schedule Map
-            </Link>
+            </Link>}
           </div>
         )}
       </section>
-    </main>
+    </div>
   );
 }

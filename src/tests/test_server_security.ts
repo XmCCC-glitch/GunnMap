@@ -264,6 +264,7 @@ test('CSP and browser safety headers survive errors and 304; HTTPS policy is exp
       assert.match(policy, /base-uri 'none'/);
       assert.match(policy, /frame-ancestors 'none'/);
       assert.match(policy, /img-src 'self' data: blob:/);
+      assert.match(policy, /connect-src 'self' http:\/\/127\.0\.0\.1:8765/);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
       assert.equal(response.headers.get('x-frame-options'), 'DENY');
       assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
