@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  mapFromCampus, needsFridayStudyHall, placementsForDate, responsiveColor,
+  mapFromCampus, needsFridayStudyHall, needsWednesdayPrime, placementsForDate, responsiveColor,
   responsivePlacements, scheduleForDate, visibleNumericPeriods,
   type CampusPeriods, type CampusPlacement,
 } from "../../web/src/features/schedule/campus-sync.js";
@@ -22,6 +22,14 @@ test("Friday shows an empty Study Hall card only without a selected Study Hall",
   assert.equal(needsFridayStudyHall(friday, [row("SH", "N-203")]), false);
   assert.equal(needsFridayStudyHall(friday, [row("StudyHall", "N-203")]), false);
   assert.equal(needsFridayStudyHall("2026-10-14", [row("SELF 11-12", "M-03")]), false);
+});
+
+test("Wednesday shows an empty PRIME card only without a selected PRIME", () => {
+  const wednesday = "2026-10-14";
+  assert.equal(scheduleForDate(wednesday), "W");
+  assert.equal(needsWednesdayPrime(wednesday, [row("6", "J-10")]), true);
+  assert.equal(needsWednesdayPrime(wednesday, [row("PRIME", "H-03")]), false);
+  assert.equal(needsWednesdayPrime("2026-10-16", [row("6", "J-10")]), false);
 });
 
 test("Campus date sync keeps only active placements and recognizes responsive periods", () => {

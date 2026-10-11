@@ -86,6 +86,11 @@ export function needsFridayStudyHall(date: string, rows: CampusPlacement[]): boo
     /^(?:SH\b|STUDY\s*HALL\b)/i.test(row.period?.trim() ?? ""));
 }
 
+export function needsWednesdayPrime(date: string, rows: CampusPlacement[]): boolean {
+  return scheduleForDate(date) === "W" && !responsivePlacements(rows).some(row =>
+    /^PRIME\b/i.test(row.period?.trim() ?? ""));
+}
+
 export function responsiveColor(period: string | null): string {
   if (/^PRIME\b/i.test(period ?? "")) return "#f59e0b";
   if (/^SELF\b/i.test(period ?? "")) return "#06b6d4";

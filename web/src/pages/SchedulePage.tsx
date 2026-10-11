@@ -28,7 +28,7 @@ import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
 import {
   CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
-  needsFridayStudyHall, numericCandidates, placementsForDate, responsiveColor,
+  needsFridayStudyHall, needsWednesdayPrime, numericCandidates, placementsForDate, responsiveColor,
   responsivePlacements, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
 import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
@@ -211,6 +211,12 @@ export function SchedulePage() {
       responsive.push({
         name: "Study Hall", course: "", startTime: null, endTime: null,
         room: "", building: "", color: responsiveColor("Study Hall"), placeholder: true,
+      });
+    }
+    if (needsWednesdayPrime(campusDate, dayRows)) {
+      responsive.push({
+        name: "PRIME", course: "", startTime: null, endTime: null,
+        room: "", building: "", color: responsiveColor("PRIME"), placeholder: true,
       });
     }
     setResponsivePeriods(responsive);
