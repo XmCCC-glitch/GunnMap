@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { GeneratedMapPanel, savedImagePath } from "./GeneratedMapPage.js";
 import { PeriodEditor } from "../features/schedule/PeriodEditor.js";
 import {
   EXAMPLE_SCHEDULE,
@@ -25,6 +25,11 @@ import type { RoomOption } from "../features/rooms/types.js";
 import { buildingName } from "../features/rooms/room-display.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
+import {
+  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
+  numericCandidates, placementsForDate, responsiveColor, responsivePlacements, schoolDate,
+} from "../features/schedule/campus-sync.js";
+import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
 import { isPages, loadRooms } from "../features/pages/site-data.js";
@@ -54,7 +59,6 @@ function removeGeneratedMap() {
 }
 
 export function SchedulePage() {
-  const navigate = useNavigate();
   const showToast = useToast();
   const [rooms, setRooms] = useState<RoomOption[]>([]);
   const [buildings, setBuildings] = useState<string[]>([]);
@@ -65,6 +69,7 @@ export function SchedulePage() {
   const [templates, setTemplates] = useState<ScheduleTemplate[]>(() => loadTemplates());
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [rendering, setRendering] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(savedImagePath);
   const [sharedPeriods, setSharedPeriods] = useState<Period[] | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
@@ -74,10 +79,18 @@ export function SchedulePage() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [undoHistory, setUndoHistory] = useState<ScheduleSnapshot[]>([]);
   const [redoHistory, setRedoHistory] = useState<ScheduleSnapshot[]>([]);
+  const [campusData, setCampusData] = useState<CampusPeriods | null>(null);
+  const [campusStatus, setCampusStatus] = useState("Checking local connector…");
+  const [campusDate, setCampusDate] = useState(schoolDate);
+  const [campusUpdatedAt, setCampusUpdatedAt] = useState("");
   const revision = useRef(0);
+  const campusExtrasKey = useRef("");
+  const periodsRef = useRef(periods);
+  periodsRef.current = periods;
   const activeRender = useRef<ActiveRender | null>(null);
   const lastInputUndoAt = useRef(-Infinity);
   const editorForm = useRef<HTMLFormElement>(null);
+  const generatedMap = useRef<HTMLDivElement>(null);
   const templateDialog = useRef<HTMLDialogElement>(null);
   const deleteDialog = useRef<HTMLDialogElement>(null);
   const sharedDialog = useRef<HTMLDialogElement>(null);
@@ -86,6 +99,7 @@ export function SchedulePage() {
   const invalidatePreview = useCallback(() => {
     revision.current += 1;
     setRendering(false);
+    setGeneratedImage("");
     removeGeneratedMap();
   }, []);
   useEffect(() => () => { revision.current += 1; }, []);
@@ -140,6 +154,54 @@ export function SchedulePage() {
     invalidatePreview();
     return saved;
   }, [buildings, rooms, sharedPreview, invalidatePreview, showToast]);
+
+  useEffect(() => {
+    let active = true;
+    let pending = false;
+    async function update() {
+      if (pending) return;
+      pending = true;
+      try {
+        const result = await fetchCampusPeriods();
+        if (!active) return;
+        setCampusData(result);
+        setCampusStatus("Connected");
+        setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+      } catch (error) {
+        if (!active) return;
+        setCampusStatus(error instanceof TypeError
+          ? "Local connector unavailable. Start it to sync your schedule."
+          : error instanceof Error ? error.message : "Campus sync failed.");
+      } finally { pending = false; }
+    }
+    const focused = () => { void update(); };
+    const visible = () => { if (document.visibilityState === "visible") void update(); };
+    void update();
+    window.addEventListener("focus", focused);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", focused);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!campusData || !roomsLoaded || sharedPreview) return;
+    const dayRows = placementsForDate(campusData, campusDate);
+    const imported = mapFromCampus(periodsRef.current, dayRows);
+    if (JSON.stringify(imported) !== JSON.stringify(periodsRef.current)) {
+      writeSchedule(imported, { preview: false, persistDraft: true });
+    }
+    const extraKey = JSON.stringify(responsivePlacements(dayRows).map(row => [row.period, row.room]));
+    if (campusExtrasKey.current !== extraKey) {
+      campusExtrasKey.current = extraKey;
+      invalidatePreview();
+    }
+    // Refreshes and date changes are deliberate sync points. A manual edit
+    // should remain in place until the next refresh or date change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campusData, campusDate, roomsLoaded, sharedPreview]);
 
   useEffect(() => {
     let current = true;
@@ -393,21 +455,27 @@ export function SchedulePage() {
       revision: requestRevision,
       promise: (async () => {
         try {
-          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(periods)) : await (async () => {
+          const extras = campusData && !sharedPreview
+            ? responsivePlacements(placementsForDate(campusData, campusDate))
+              .filter(row => row.room && findRoomMatches(rooms, row.room).length === 1)
+              .slice(0, 3).map(row => ({
+                name: row.period || "Study Hall", room: row.room!,
+                building: findRoomMatches(rooms, row.room!)[0].building,
+                  color: responsiveColor(row.period),
+              }))
+            : [];
+          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(periods, extras)) : await (async () => {
             const response = await fetch("/api/render", {
-              method: "POST",
-              credentials: "omit",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ periods: periods.map(period => ({
-                ...period,
-                room: period.room.trim(),
-                building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
-              })) }),
+            method: "POST",
+            credentials: "omit",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ periods: periods.map(period => ({
+              ...period,
+              room: period.room.trim(),
+              building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
+            })), extras }),
             });
-            const result = await response.json() as {
-              image_url?: string;
-              error?: string;
-            };
+            const result = await response.json() as { image_url?: string; error?: string };
             if (!response.ok || !result.image_url) throw new Error(result.error ?? "Map generation failed.");
             return result.image_url;
           })();
@@ -420,10 +488,10 @@ export function SchedulePage() {
           try {
             sessionStorage.setItem(GENERATED_MAP_SESSION_KEY, imageUrl);
           } catch {
-            if (isPages) throw new Error("Browser session storage is unavailable. Enable it to view the generated map.");
-            // Server-generated image URLs remain shareable without session storage.
+            // The image URL remains shareable without session storage.
           }
-          navigate(isPages ? "/generate-map" : `/generate-map?image=${encodeURIComponent(imageUrl)}`);
+          setGeneratedImage(imageUrl);
+          window.requestAnimationFrame(() => generatedMap.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
           return true;
         } catch (error) {
           if (requestRevision === revision.current) {
@@ -444,6 +512,28 @@ export function SchedulePage() {
   };
 
   const shared = sharedPeriods ?? [];
+  const campusRows = campusData ? placementsForDate(campusData, campusDate) : [];
+  const flexibleRows = responsivePlacements(campusRows);
+  const otherCampusRows = campusRows.filter(row =>
+    !/^[1-7]$/.test(row.period?.trim() ?? "") && !flexibleRows.includes(row));
+
+  const chooseCampusCourse = (number: number, row: CampusPlacement) => {
+    const next = clonePeriods(periods);
+    const room = row.room?.trim() ?? "";
+    next[number - 1] = { ...next[number - 1], room, building: "" };
+    recordUndo(periods);
+    writeSchedule(next, { preview: false, persistDraft: true });
+  };
+
+  const downloadCampusJson = () => {
+    if (!campusData) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(campusData, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `infinite-campus-periods-${campusData.term}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   return (
     <>
@@ -554,6 +644,61 @@ export function SchedulePage() {
               </details>
             </div>
           </div>
+          <section className="campus-sync" aria-labelledby="campus-sync-title">
+            <div className="campus-sync-heading">
+              <div>
+                <h3 id="campus-sync-title">Infinite Campus</h3>
+                <p role="status">{campusStatus}{campusData ? ` · ${campusData.term} · updated ${campusUpdatedAt}` : ""}</p>
+              </div>
+              <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
+                Connect Infinite Campus
+              </button>
+            </div>
+            {campusData && <>
+              <div className="campus-sync-controls">
+                <label htmlFor="campus-date">Schedule date</label>
+                <input id="campus-date" type="date" value={campusDate} onChange={event => setCampusDate(event.currentTarget.value)} />
+                <button type="button" className="text-button" onClick={downloadCampusJson}>Download period JSON</button>
+              </div>
+              {sharedPreview && <p className="campus-sync-note">Campus data is loaded. The shared preview stays in place until you leave preview mode.</p>}
+              {[1, 2, 3, 4, 5, 6, 7].map(number => {
+                const choices = numericCandidates(campusRows, number);
+                return choices.length > 1 ? <label className="campus-course-choice" key={number}>
+                  <span>Period {number} has multiple active courses. Choose one:</span>
+                  <select value={(() => {
+                    const index = choices.findIndex(row => row.room?.trim() === periods[number - 1].room.trim());
+                    return index < 0 ? "" : String(index);
+                  })()} onChange={event => {
+                    const row = choices[Number(event.currentTarget.value)];
+                    if (row) chooseCampusCourse(number, row);
+                  }}>
+                    <option value="">Choose a course</option>
+                    {choices.map((row, index) => <option key={`${row.course_number}-${row.section}-${index}`} value={index}>{row.course} · {row.room || "no room"}</option>)}
+                  </select>
+                </label> : null;
+              })}
+              <div className="campus-responsive">
+                <div>
+                  <strong>PRIME, SELF &amp; Study Hall</strong>
+                  <p>Choose or change these sessions in Infinite Campus Responsive Schedule, then return here to update.</p>
+                </div>
+                <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
+              </div>
+              {flexibleRows.length ? <ul className="campus-period-details">
+                {flexibleRows.map((row, index) => <li key={`${row.course_number}-${row.section}-${index}`}>
+                  <strong>{row.period}</strong> · {row.course || "Selected session"} · {row.room || "Room not listed"}
+                  {row.start_time && row.end_time ? ` · ${row.start_time}–${row.end_time}` : ""}
+                  {row.room && findRoomMatches(rooms, row.room).length !== 1 ? " · room not on map" : ""}
+                </li>)}
+              </ul> : <p className="campus-sync-note">No PRIME, SELF or Study Hall selection appears for this date.</p>}
+              {otherCampusRows.length > 0 && <details className="campus-other-periods">
+                <summary>Other Campus periods ({otherCampusRows.length})</summary>
+                <ul className="campus-period-details">{otherCampusRows.map((row, index) => <li key={`${row.course_number}-${row.section}-${index}`}>
+                  <strong>{row.period}</strong> · {row.course || "Course"} · {row.room || "Room not listed"}
+                </li>)}</ul>
+              </details>}
+            </>}
+          </section>
           {sharedPreview && (
             <div className="shared-preview-banner" role="region" aria-label="Shared schedule preview">
               <p>Your shared schedule is a temporary preview. Editing it keeps your device draft unchanged.</p>
@@ -576,6 +721,7 @@ export function SchedulePage() {
               rooms={rooms}
               buildings={buildings}
               disabled={!roomsLoaded}
+              campusRows={campusRows}
               onChange={handleEdit}
             />
             <div className="form-actions">
@@ -591,6 +737,9 @@ export function SchedulePage() {
             </div>
           </form>
         </section>
+        {generatedImage && <div ref={generatedMap} className="generated-map-result">
+          <GeneratedMapPanel requestedImage={generatedImage} embedded />
+        </div>}
       </main>
 
       <dialog

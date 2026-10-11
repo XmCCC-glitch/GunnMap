@@ -6,6 +6,7 @@ import { buildingName, roomLocationLabel } from "../rooms/room-display.js";
 import { periodRoomState } from "./room-validation.js";
 import { PERIOD_COLORS } from "./schedule-storage.js";
 import type { Period } from "./types.js";
+import type { CampusPlacement } from "./campus-sync.js";
 import type { RoomOption } from "../rooms/types.js";
 
 const ColorEditor = lazy(() => import("./ColorEditor.js"));
@@ -14,6 +15,7 @@ interface PeriodEditorProps {
   periods: Period[];
   rooms: RoomOption[];
   buildings: string[];
+  campusRows?: CampusPlacement[];
   disabled?: boolean;
   onChange(next: Period[], previous: Period[]): void;
 }
@@ -22,6 +24,7 @@ export function PeriodEditor({
   periods,
   rooms,
   buildings,
+  campusRows = [],
   disabled = false,
   onChange,
 }: PeriodEditorProps) {
@@ -85,6 +88,9 @@ export function PeriodEditor({
       </button>}
       {periods.map((period, index) => {
         const number = index + 1;
+        const campusCandidates = campusRows.filter(row => row.period?.trim() === String(number));
+        const campusCourse = campusCandidates.length === 1 ? campusCandidates[0] :
+          campusCandidates.find(row => row.room?.trim() === period.room.trim());
         const { matches, state, invalid } = periodRoomState(period, rooms);
         const feedback = state === "empty" ? "No class this period"
           : state === "matched" ? `Found ${roomLocationLabel(matches[0])} · ${buildingName(matches[0].building)}${matches[0].floor === 2 ? " · 2nd floor" : ""}`
@@ -146,6 +152,11 @@ export function PeriodEditor({
             <p className="period-room-feedback" id={`period-${number}-feedback`} aria-live="polite">
               {disabled ? "Loading room list…" : feedback}
             </p>
+            {campusCourse && <p className="period-campus-course">
+              {campusCourse.course || "Campus course"}
+              {campusCourse.start_time && campusCourse.end_time
+                ? ` · ${campusCourse.start_time}–${campusCourse.end_time}` : ""}
+            </p>}
             {!disabled && state === "ambiguous" && (
               <div className="period-room-choices" aria-label={`Choose period ${number} room`}>
                 {matches.map(room => (

@@ -6,19 +6,19 @@ import { removeOfflineMap, savedOfflineMap, saveMapOffline } from "../features/o
 import { isPages } from "../features/pages/site-data.js";
 
 const imagePattern = /^\/output\/period_map_[0-9a-f]{32}\.png$/i;
+const pagesImagePattern = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+const isValidImage = (value: string) => imagePattern.test(value) || (isPages && value.length < 8_000_000 && pagesImagePattern.test(value));
 
-function savedImagePath() {
+export function savedImagePath() {
   try {
     const saved = window.sessionStorage.getItem(GENERATED_MAP_SESSION_KEY) ?? "";
-    return imagePattern.test(saved) || (isPages && saved.length < 8_000_000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(saved)) ? saved : "";
+    return isValidImage(saved) ? saved : "";
   } catch {
     return "";
   }
 }
 
-export function GeneratedMapPage() {
-  const [searchParams] = useSearchParams();
-  const queryImage = searchParams.get("image") ?? "";
+export function GeneratedMapPanel({ requestedImage = "", embedded = false }: { requestedImage?: string; embedded?: boolean }) {
   const [failed, setFailed] = useState(false);
   const [offlinePath, setOfflinePath] = useState("");
   const [offlineMessage, setOfflineMessage] = useState("");
@@ -26,9 +26,9 @@ export function GeneratedMapPage() {
   const stage = useRef<HTMLDivElement>(null);
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
-  const validQueryImage = imagePattern.test(queryImage);
+  const validQueryImage = isValidImage(requestedImage);
   const imagePath = savedImagePath();
-  const source = validQueryImage ? queryImage : imagePath || offlinePath;
+  const source = validQueryImage ? requestedImage : embedded ? "" : imagePath || offlinePath;
 
   useEffect(() => {
     let current = true;
@@ -63,12 +63,11 @@ export function GeneratedMapPage() {
   }
 
   return (
-    <main id="main-content" className="generated-map-layout" tabIndex={-1}>
-      <section className="panel generated-map-panel" aria-labelledby="generated-map-title">
+      <section className={`panel generated-map-panel${embedded ? " generated-map-inline" : ""}`} aria-labelledby="generated-map-title">
         <div className="panel-heading">
           <div>
             <div className="eyebrow">MAP PREVIEW</div>
-            <h1 id="generated-map-title">Your campus map</h1>
+            {embedded ? <h2 id="generated-map-title">Your campus map</h2> : <h1 id="generated-map-title">Your campus map</h1>}
           </div>
           {source && !failed && (
             <div className="generated-map-actions">
@@ -79,9 +78,7 @@ export function GeneratedMapPage() {
               >
                 Download PNG
               </a>
-              <Link className="download-link" to="/">
-                Edit schedule
-              </Link>
+              {!embedded && <Link className="download-link" to="/">Edit schedule</Link>}
               {!isPages && <button type="button" className="download-link" disabled={saving} onClick={() => void changeOfflineCopy()}>
                 {saving ? "Saving…" : source === offlinePath ? "Remove offline copy" : "Save offline"}
               </button>}
@@ -119,12 +116,18 @@ export function GeneratedMapPage() {
           <div className="generated-map-empty">
             <p>{failed ? "This image is unavailable or has expired. Generate a new map from your schedule." : "Generate a map from your schedule to view it here."}</p>
             {failed && offlinePath && offlinePath !== source && <Link className="download-link" to={`/generate-map?image=${encodeURIComponent(offlinePath)}`}>View previously saved offline map</Link>}
-            <Link className="primary-button" to="/">
-              Go to Schedule Map
-            </Link>
+            {!embedded && <Link className="primary-button" to="/">Go to Schedule Map</Link>}
           </div>
         )}
       </section>
+  );
+}
+
+export function GeneratedMapPage() {
+  const [searchParams] = useSearchParams();
+  return (
+    <main id="main-content" className="generated-map-layout" tabIndex={-1}>
+      <GeneratedMapPanel requestedImage={searchParams.get("image") ?? ""} />
     </main>
   );
 }

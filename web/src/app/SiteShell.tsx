@@ -8,7 +8,6 @@ const navigation = [
   { to: "/", title: "Schedule Map", icon: "campus" },
   { to: "/evacuation", title: "Evacuation Status", icon: "routes" },
   { to: "/find-room", title: "Find a Room", icon: "search" },
-  { to: "/generate-map", title: "Generated Map", icon: "generated-map" },
 ];
 
 export function SiteShell() {
