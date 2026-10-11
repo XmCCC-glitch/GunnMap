@@ -680,7 +680,7 @@ export function SchedulePage() {
               <div className="campus-responsive">
                 <div>
                   <strong>PRIME, SELF &amp; Study Hall</strong>
-                  <p>Choose or change these sessions in Infinite Campus Responsive Schedule, then return here to update.</p>
+                  <p>Choose PRIME or Study Hall in Infinite Campus Responsive Schedule. Your SELF and selected sessions sync when you return.</p>
                 </div>
                 <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
               </div>
@@ -690,7 +690,7 @@ export function SchedulePage() {
                   {row.start_time && row.end_time ? ` · ${row.start_time}–${row.end_time}` : ""}
                   {row.room && findRoomMatches(rooms, row.room).length !== 1 ? " · room not on map" : ""}
                 </li>)}
-              </ul> : <p className="campus-sync-note">No PRIME, SELF or Study Hall selection appears for this date.</p>}
+              </ul> : <p className="campus-sync-note">No PRIME, SELF or Study Hall period appears for this date.</p>}
               {otherCampusRows.length > 0 && <details className="campus-other-periods">
                 <summary>Other Campus periods ({otherCampusRows.length})</summary>
                 <ul className="campus-period-details">{otherCampusRows.map((row, index) => <li key={`${row.course_number}-${row.section}-${index}`}>
