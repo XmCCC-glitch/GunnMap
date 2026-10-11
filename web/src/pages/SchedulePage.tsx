@@ -20,11 +20,12 @@ import { useToast } from "../shared/toast.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { isPages } from "../features/pages/site-data.js";
 import {
-  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, isNoClassDate, mapFromCampus,
-  needsFridayStudyHall, needsWednesdayPrime, numericCandidates, placementsForDate,
-  responsiveColor, responsivePlacements, schoolDate, visibleNumericPeriods,
+  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, isNoClassDate, loadSavedCampusPeriods, mapFromCampus,
+  needsFridayStudyHall, needsWednesdayPrime, numericCandidates, parseCampusPeriods, placementsForDate,
+  responsiveColor, responsivePlacements, saveCampusPeriods, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
 import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
+import { CampusSignIn } from "../features/schedule/CampusSignIn.js";
 
 const EMPTY_ROOMS: RoomData["rooms"] = [];
 const EMPTY_BUILDINGS: string[] = [];
@@ -33,12 +34,15 @@ export function SchedulePage() {
   const showToast = useToast();
   const [directory, setDirectory] = useState<RoomData | null>(null);
   const [sharedPeriods, setSharedPeriods] = useState<Period[] | null>(null);
-  const [campusData, setCampusData] = useState<CampusPeriods | null>(null);
-  const [campusStatus, setCampusStatus] = useState("Checking local connector…");
+  const [savedCampus] = useState(() => isPages ? loadSavedCampusPeriods() : null);
+  const [campusData, setCampusData] = useState<CampusPeriods | null>(savedCampus);
+  const [campusStatus, setCampusStatus] = useState(!isPages ? "Checking local connector…"
+    : savedCampus ? "Saved schedule" : "Sign in with ClassLink to load your Campus schedule.");
   const [campusDate, setCampusDate] = useState(schoolDate);
-  const [campusUpdatedAt, setCampusUpdatedAt] = useState("");
+  const [campusUpdatedAt, setCampusUpdatedAt] = useState(savedCampus?.as_of ?? "");
   const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
   const [generatedImage, setGeneratedImage] = useState(savedImagePath);
+  const campusSignInController = useRef<AbortController | null>(null);
   const editorForm = useRef<HTMLFormElement>(null);
   const generatedMap = useRef<HTMLDivElement>(null);
   const render = useScheduleRender(showToast);
@@ -59,6 +63,7 @@ export function SchedulePage() {
   const campusRows = campusData && !noClassToday ? placementsForDate(campusData, campusDate) : [];
 
   useEffect(() => {
+    if (isPages) return;
     let active = true;
     let pending = false;
     async function update() {
@@ -168,6 +173,29 @@ export function SchedulePage() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function keepPagesCampus(data: CampusPeriods | null, status: string) {
+    if (!data) {
+      setResponsivePeriods([]);
+      invalidateGenerated();
+    }
+    saveCampusPeriods(data);
+    setCampusData(data);
+    setCampusStatus(status);
+    setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  }
+
+  async function importCampusJson(file: File | undefined) {
+    if (!file) return;
+    try {
+      if (file.size > 1_000_000) throw new Error("Period JSON file is too large (1 MB maximum).");
+      const data = parseCampusPeriods(JSON.parse(await file.text()) as unknown);
+      keepPagesCampus(data, `Imported period JSON (as of ${data.as_of})`);
+    } catch (error) {
+      setCampusStatus(error instanceof SyntaxError ? "This file is not valid JSON."
+        : error instanceof Error ? error.message : "Could not import period JSON.");
+    }
+  }
+
   return (
     <>
       <header className="page-intro">
@@ -204,10 +232,29 @@ export function SchedulePage() {
                 <h3 id="campus-sync-title">Infinite Campus</h3>
                 <p role="status">{campusStatus}{campusData ? ` · ${campusData.term} · updated ${campusUpdatedAt}` : ""}</p>
               </div>
-              <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
+              {!isPages && <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
                 Connect Infinite Campus
-              </button>
+              </button>}
             </div>
+            {isPages && <>
+              <CampusSignIn controller={campusSignInController} onSynced={data => keepPagesCampus(data, "Connected")} />
+              {campusData && <button type="button" className="download-link campus-forget"
+                onClick={() => {
+                  campusSignInController.current?.abort();
+                  keepPagesCampus(null, "Saved Campus schedule removed from this browser.");
+                }}>
+                Forget saved Campus schedule
+              </button>}
+              <details className="campus-file-import">
+                <summary>Import period JSON instead</summary>
+                <label htmlFor="campus-period-file">Period JSON file</label>
+                <input id="campus-period-file" type="file" accept=".json,application/json" onChange={event => {
+                  void importCampusJson(event.currentTarget.files?.[0]);
+                  event.currentTarget.value = "";
+                }} />
+                <p className="campus-sync-note">Use a period JSON file downloaded from GunnMap with the local connector. The file stays in this browser.</p>
+              </details>
+            </>}
             {campusData && <>
               <div className="campus-sync-controls">
                 <label htmlFor="campus-date">Schedule date</label>

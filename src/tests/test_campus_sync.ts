@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  isNoClassDate, mapFromCampus, needsFridayStudyHall, needsWednesdayPrime, placementsForDate, responsiveColor,
-  responsivePlacements, scheduleForDate, visibleNumericPeriods,
+  CAMPUS_SYNC_URL, isNoClassDate, loadSavedCampusPeriods, mapFromCampus, needsFridayStudyHall, needsWednesdayPrime,
+  parseCampusPeriods, placementsForDate, responsiveColor, responsivePlacements, saveCampusPeriods, scheduleForDate,
+  syncCampusWithClassLink, visibleNumericPeriods,
   type CampusPeriods, type CampusPlacement,
 } from "../../web/src/features/schedule/campus-sync.js";
 import { defaultPeriods } from "../../web/src/features/schedule/schedule-storage.js";
@@ -66,4 +67,63 @@ test("Campus calendar hides weekends and non-school weekdays without guessing ou
   assert.equal(isNoClassDate(calendar, "2027-07-05"), false);
   assert.equal(isNoClassDate(null, "2026-11-11"), false);
   assert.equal(isNoClassDate(null, "2026-10-10"), true);
+});
+
+test("period JSON imports only the connector's schedule shape", () => {
+  const valid = {
+    term: "S1", as_of: "2026-10-11", terms: ["S1"], schedules: ["W"],
+    periods: [row("6", "J-10")],
+  };
+  assert.deepEqual(parseCampusPeriods(valid), valid);
+  assert.throws(() => parseCampusPeriods({ ...valid, periods: [{ ...row("6", "J-10"), room: 123 }] }), /valid Infinite Campus/);
+  assert.throws(() => parseCampusPeriods({ ...valid, calendar: { school_days: "tomorrow" } }), /valid Infinite Campus/);
+});
+
+test("ClassLink sync posts credentials once and validates the returned period JSON", async t => {
+  const valid = { term: "S1", as_of: "2026-10-11", terms: ["S1"], schedules: ["W"], periods: [row("6", "J-10")] };
+  const calls: [string, RequestInit | undefined][] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    calls.push([url, init]);
+    return new Response(JSON.stringify(valid), { status: 200 });
+  });
+  assert.deepEqual(await syncCampusWithClassLink("950123", "secret"), valid);
+  assert.equal(calls[0][0], `${CAMPUS_SYNC_URL}/api/sync`);
+  assert.equal(calls[0][1]?.method, "POST");
+  assert.equal(calls[0][1]?.credentials, "omit");
+  assert.deepEqual(JSON.parse(String(calls[0][1]?.body)), { username: "950123", password: "secret" });
+});
+
+test("ClassLink sync reports server errors and unreachable servers", async t => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ error: "ClassLink sign-in did not finish." }), { status: 401 }));
+  await assert.rejects(syncCampusWithClassLink("950123", "wrong"), /ClassLink sign-in did not finish/);
+  fetchMock.mock.mockImplementation(async () => new Response("<html>", { status: 502 }));
+  await assert.rejects(syncCampusWithClassLink("950123", "x"), /HTTP 502/);
+  fetchMock.mock.mockImplementation(async () => { throw new TypeError("Load failed"); });
+  await assert.rejects(syncCampusWithClassLink("950123", "x"), /unreachable/);
+  fetchMock.mock.mockImplementation(async () => new Response(JSON.stringify({ periods: "none" }), { status: 200 }));
+  await assert.rejects(syncCampusWithClassLink("950123", "x"), /valid Infinite Campus/);
+});
+
+test("saved Campus periods round-trip, ignore corrupt data, and can be forgotten", () => {
+  const store = new Map<string, string>();
+  const original = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = { localStorage: {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, value); },
+    removeItem: (key: string) => { store.delete(key); },
+  } };
+  try {
+    const valid = { term: "S1", as_of: "2026-10-11", terms: ["S1"], schedules: ["W"], periods: [row("6", "J-10")] };
+    assert.equal(loadSavedCampusPeriods(), null);
+    saveCampusPeriods(valid);
+    assert.deepEqual(loadSavedCampusPeriods(), valid);
+    assert.ok(![...store.values()].some(value => value.includes("password")));
+    store.set("gunnmap.campus-periods.v1", "{not json");
+    assert.equal(loadSavedCampusPeriods(), null);
+    saveCampusPeriods(null);
+    assert.equal(store.size, 0);
+  } finally {
+    (globalThis as { window?: unknown }).window = original;
+  }
 });
