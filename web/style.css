@@ -230,6 +230,9 @@ wa-tooltip::part(content) { white-space: pre-line; }
 .editor-options .template-controls label { padding-top: 3px; }
 .period-list { display: grid; gap: 9px; margin-top: 17px; }
 .period-card { display: grid; grid-template-columns: 38px minmax(65px, .75fr) minmax(110px, 1.2fr) 30px; grid-template-areas: "number room building color"; align-items: center; gap: 9px; padding: 10px; border: 1px solid #ffffff12; border-radius: 7px; background: #303034; box-shadow: inset 0 1px #ffffff05; }
+.period-card.period-card--responsive { grid-template-columns: 82px minmax(65px, .75fr) minmax(110px, 1.2fr) 30px; }
+.period-number--responsive strong { max-width: 100%; font-size: 12px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+.campus-json-action { display: flex; justify-content: flex-end; margin-top: 10px; }
 .period-card:focus-within { border-color: #d28675; background: #353236; box-shadow: 0 0 0 2px #e7897022; }
 .period-number { grid-area: number; display: flex; flex-direction: column; justify-content: center; align-items: center; align-self: stretch; gap: 3px; border-left: 2px solid var(--period-accent, #f38470); }
 .period-number span { font-size: 7px; font-weight: 650; letter-spacing: .06em; color: #c0c0c8; }
@@ -553,6 +556,7 @@ dialog.evacuation-map-dialog:not([open]) { display: none; }
     grid-template-areas: "number room color";
     gap: 8px;
   }
+  .period-card.period-card--responsive { grid-template-columns: 80px minmax(0, 1fr) 40px; }
   .field-building { display: none; }
 }
 @media (min-width: 1251px) {

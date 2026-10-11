@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  mapFromCampus, placementsForDate, responsiveColor, responsivePlacements, scheduleForDate,
+  mapFromCampus, placementsForDate, responsiveColor, responsivePlacements, scheduleForDate, visibleNumericPeriods,
   type CampusPeriods, type CampusPlacement,
 } from "../../web/src/features/schedule/campus-sync.js";
 import { defaultPeriods } from "../../web/src/features/schedule/schedule-storage.js";
@@ -23,6 +23,8 @@ test("Campus date sync keeps only active placements and recognizes responsive pe
       row("SELF 11-12", "N-211", "2026-10-14")],
   };
   assert.equal(scheduleForDate("2026-10-14"), "W");
+  assert.deepEqual(visibleNumericPeriods("2026-10-14"), [5, 6, 7]);
+  assert.deepEqual(visibleNumericPeriods("2026-10-13"), [1, 2, 3, 4]);
   const active = placementsForDate(data, "2026-10-14");
   assert.equal(active.length, 3);
   assert.deepEqual(responsivePlacements(active).map(item => item.period), ["PRIME", "SELF 11-12"]);

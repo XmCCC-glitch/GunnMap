@@ -16,8 +16,18 @@ interface PeriodEditorProps {
   rooms: RoomOption[];
   buildings: string[];
   campusRows?: CampusPlacement[];
+  visibleNumbers?: number[];
+  responsivePeriods?: ResponsivePeriod[];
+  onResponsiveChange?(index: number, next: ResponsivePeriod): void;
   disabled?: boolean;
   onChange(next: Period[], previous: Period[]): void;
+}
+
+export interface ResponsivePeriod extends Period {
+  name: string;
+  course: string;
+  startTime: string | null;
+  endTime: string | null;
 }
 
 export function PeriodEditor({
@@ -25,6 +35,9 @@ export function PeriodEditor({
   rooms,
   buildings,
   campusRows = [],
+  visibleNumbers = [1, 2, 3, 4, 5, 6, 7],
+  responsivePeriods = [],
+  onResponsiveChange,
   disabled = false,
   onChange,
 }: PeriodEditorProps) {
@@ -88,6 +101,7 @@ export function PeriodEditor({
       </button>}
       {periods.map((period, index) => {
         const number = index + 1;
+        if (!visibleNumbers.includes(number)) return null;
         const campusCandidates = campusRows.filter(row => row.period?.trim() === String(number));
         const campusCourse = campusCandidates.length === 1 ? campusCandidates[0] :
           campusCandidates.find(row => row.room?.trim() === period.room.trim());
@@ -183,6 +197,17 @@ export function PeriodEditor({
           </div>
         );
       })}
+      {responsivePeriods.map((period, index) => <ResponsivePeriodCard
+        key={`${period.name}-${index}`}
+        period={period}
+        index={index}
+        rooms={rooms}
+        buildings={buildings}
+        wide={wide}
+        manualBuildings={manualBuildings}
+        disabled={disabled}
+        onChange={next => onResponsiveChange?.(index, next)}
+      />)}
       {editingColor !== null && <Suspense fallback={<p role="status">Opening color editor…</p>}>
         <ColorEditor period={editingColor + 1} value={periods[editingColor].color} swatches={PERIOD_COLORS}
           onApply={color => update(editingColor, current => { current.color = color; })}
@@ -190,4 +215,73 @@ export function PeriodEditor({
       </Suspense>}
     </div>
   );
+}
+
+function ResponsivePeriodCard({ period, index, rooms, buildings, wide, manualBuildings, disabled, onChange }: {
+  period: ResponsivePeriod;
+  index: number;
+  rooms: RoomOption[];
+  buildings: string[];
+  wide: boolean;
+  manualBuildings: boolean;
+  disabled: boolean;
+  onChange(next: ResponsivePeriod): void;
+}) {
+  const [editingColor, setEditingColor] = useState(false);
+  const colorTrigger = useRef<HTMLButtonElement>(null);
+  const id = `responsive-${index}`;
+  const { matches, state, invalid } = periodRoomState(period, rooms);
+  const feedback = state === "empty" ? "No room listed for this session"
+    : state === "matched" ? `Found ${roomLocationLabel(matches[0])} · ${buildingName(matches[0].building)}${matches[0].floor === 2 ? " · 2nd floor" : ""}`
+    : state === "ambiguous" ? "More than one room matches. Choose a location below."
+    : `Room not found${period.building ? ` in ${buildingName(period.building)}` : ""}. Check the room or building.`;
+  const updateRoom = (room: string) => {
+    const candidates = [...new Set(findRoomMatches(rooms, room).map(match => match.building))];
+    onChange({ ...period, room, building: candidates.length === 1 ? candidates[0] : "" });
+  };
+
+  return <div className="period-card period-card--responsive" data-period={period.name}
+    data-room-state={disabled ? "loading" : state}
+    style={{ "--period-accent": period.color } as CSSVariables}>
+    <div className="period-number period-number--responsive" role="group" aria-label={period.name}>
+      <span aria-hidden="true">PERIOD</span><strong>{period.name}</strong>
+    </div>
+    <label className="field field-room" htmlFor={`${id}-room`}>
+      <span>Room</span>
+      <RoomInput id={`${id}-room`} label={`${period.name} room`} value={period.room}
+        building={period.building} rooms={rooms} placeholder="e.g. N211"
+        disabled={disabled} invalid={!disabled && invalid} describedBy={`${id}-feedback`}
+        onValueChange={updateRoom} />
+    </label>
+    {(wide || manualBuildings) && <label className={`field field-building${!wide ? " is-manual" : ""}`}>
+      <span>Building</span>
+      <select aria-label={`${period.name} building`} value={period.building} disabled={disabled}
+        onChange={event => onChange({ ...period, building: event.currentTarget.value })}>
+        <option value="">Auto-detect</option>
+        {buildings.map(building => <option value={building} key={building}>{buildingName(building)}</option>)}
+      </select>
+    </label>}
+    <p className="period-room-feedback" id={`${id}-feedback`} aria-live="polite">
+      {disabled ? "Loading room list…" : feedback}
+    </p>
+    <p className="period-campus-course">{period.course || "Selected session"}
+      {period.startTime && period.endTime ? ` · ${period.startTime}–${period.endTime}` : ""}
+    </p>
+    {!disabled && state === "ambiguous" && <div className="period-room-choices" aria-label={`Choose ${period.name} room`}>
+      {matches.map(room => <button className="room-lookup-choice" type="button" key={room.id}
+        onClick={() => updateRoom(roomLocationLabel(room) === room.label ? `${room.label} (${room.id})` : roomLocationLabel(room))}>
+        {roomLocationLabel(room) === room.label ? `${room.label} (${room.id})` : roomLocationLabel(room)}
+      </button>)}
+    </div>}
+    <div className="field field-color"><span>Color</span>
+      <button type="button" className="period-color-trigger" aria-label={`${period.name} color`}
+        aria-haspopup="dialog" style={{ "--swatch-color": period.color } as CSSVariables}
+        disabled={disabled} onClick={event => { colorTrigger.current = event.currentTarget; setEditingColor(true); }} />
+    </div>
+    {editingColor && <Suspense fallback={<p role="status">Opening color editor…</p>}>
+      <ColorEditor period={period.name} value={period.color} swatches={PERIOD_COLORS}
+        onApply={color => onChange({ ...period, color })}
+        onClose={() => { setEditingColor(false); colorTrigger.current?.focus(); }} />
+    </Suspense>}
+  </div>;
 }

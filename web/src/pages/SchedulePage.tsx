@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { GeneratedMapPanel, savedImagePath } from "./GeneratedMapPage.js";
 import { PeriodEditor } from "../features/schedule/PeriodEditor.js";
+import type { ResponsivePeriod } from "../features/schedule/PeriodEditor.js";
 import {
   EXAMPLE_SCHEDULE,
   GENERATED_MAP_SESSION_KEY,
@@ -27,7 +28,7 @@ import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { periodRoomState } from "../features/schedule/room-validation.js";
 import {
   CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
-  numericCandidates, placementsForDate, responsiveColor, responsivePlacements, schoolDate,
+  numericCandidates, placementsForDate, responsiveColor, responsivePlacements, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
 import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
 import type { CSSVariables } from "../shared/css-types.js";
@@ -83,8 +84,8 @@ export function SchedulePage() {
   const [campusStatus, setCampusStatus] = useState("Checking local connector…");
   const [campusDate, setCampusDate] = useState(schoolDate);
   const [campusUpdatedAt, setCampusUpdatedAt] = useState("");
+  const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
   const revision = useRef(0);
-  const campusExtrasKey = useRef("");
   const periodsRef = useRef(periods);
   periodsRef.current = periods;
   const activeRender = useRef<ActiveRender | null>(null);
@@ -95,6 +96,8 @@ export function SchedulePage() {
   const deleteDialog = useRef<HTMLDialogElement>(null);
   const sharedDialog = useRef<HTMLDialogElement>(null);
   const pendingDelete = useRef("");
+  const visibleNumbers = campusData && !sharedPreview
+    ? visibleNumericPeriods(campusDate) : [1, 2, 3, 4, 5, 6, 7];
 
   const invalidatePreview = useCallback(() => {
     revision.current += 1;
@@ -193,11 +196,17 @@ export function SchedulePage() {
     if (JSON.stringify(imported) !== JSON.stringify(periodsRef.current)) {
       writeSchedule(imported, { preview: false, persistDraft: true });
     }
-    const extraKey = JSON.stringify(responsivePlacements(dayRows).map(row => [row.period, row.room]));
-    if (campusExtrasKey.current !== extraKey) {
-      campusExtrasKey.current = extraKey;
-      invalidatePreview();
-    }
+    setResponsivePeriods(responsivePlacements(dayRows).map(row => {
+      const room = row.room?.trim() ?? "";
+      const matches = findRoomMatches(rooms, room);
+      return {
+        name: row.period?.trim() || "Study Hall", course: row.course || "Selected session",
+        startTime: row.start_time, endTime: row.end_time,
+        room, building: matches.length === 1 ? matches[0].building : "",
+        color: responsiveColor(row.period),
+      };
+    }));
+    invalidatePreview();
     // Refreshes and date changes are deliberate sync points. A manual edit
     // should remain in place until the next refresh or date change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -440,12 +449,21 @@ export function SchedulePage() {
       return activeRender.current.promise;
     }
     invalidatePreview();
-    const invalid = periods.map((period, index) => ({ index, ...periodRoomState(period, rooms) })).filter(item => item.invalid);
+    const invalid = periods.map((period, index) => ({ index, ...periodRoomState(period, rooms) }))
+      .filter(item => visibleNumbers.includes(item.index + 1) && item.invalid);
     if (invalid.length) {
       setValidationMessage(`Check period${invalid.length === 1 ? "" : "s"} ${invalid.map(item => item.index + 1).join(", ")}. Choose a recognized room before generating.`);
       const input = editorForm.current?.querySelector<HTMLInputElement>(`#period-${invalid[0].index + 1}-room`);
       input?.focus();
       input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+    const invalidResponsive = !sharedPreview
+      ? responsivePeriods.findIndex(period => periodRoomState(period, rooms).invalid) : -1;
+    if (invalidResponsive >= 0) {
+      const name = responsivePeriods[invalidResponsive].name;
+      setValidationMessage(`Check ${name}. Choose a recognized room before generating.`);
+      editorForm.current?.querySelector<HTMLInputElement>(`#responsive-${invalidResponsive}-room`)?.focus();
       return false;
     }
     setValidationMessage("");
@@ -456,20 +474,19 @@ export function SchedulePage() {
       promise: (async () => {
         try {
           const extras = campusData && !sharedPreview
-            ? responsivePlacements(placementsForDate(campusData, campusDate))
-              .filter(row => row.room && findRoomMatches(rooms, row.room).length === 1)
-              .slice(0, 3).map(row => ({
-                name: row.period || "Study Hall", room: row.room!,
-                building: findRoomMatches(rooms, row.room!)[0].building,
-                  color: responsiveColor(row.period),
-              }))
-            : [];
-          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(periods, extras)) : await (async () => {
+            ? responsivePeriods.filter(period => period.room.trim()).slice(0, 3).map(period => ({
+              name: period.name, room: period.room.trim(),
+              building: findRoomMatches(rooms, period.room, period.building)[0].building,
+              color: period.color,
+            })) : [];
+          const mapPeriods = periods.map((period, index) => visibleNumbers.includes(index + 1)
+            ? period : { ...period, room: "", building: "" });
+          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(mapPeriods, extras)) : await (async () => {
             const response = await fetch("/api/render", {
             method: "POST",
             credentials: "omit",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ periods: periods.map(period => ({
+            body: JSON.stringify({ periods: mapPeriods.map(period => ({
               ...period,
               room: period.room.trim(),
               building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
@@ -513,9 +530,11 @@ export function SchedulePage() {
 
   const shared = sharedPeriods ?? [];
   const campusRows = campusData ? placementsForDate(campusData, campusDate) : [];
-  const flexibleRows = responsivePlacements(campusRows);
-  const otherCampusRows = campusRows.filter(row =>
-    !/^[1-7]$/.test(row.period?.trim() ?? "") && !flexibleRows.includes(row));
+
+  const handleResponsiveEdit = (index: number, next: ResponsivePeriod) => {
+    setResponsivePeriods(existing => existing.map((period, current) => current === index ? next : period));
+    invalidatePreview();
+  };
 
   const chooseCampusCourse = (number: number, row: CampusPlacement) => {
     const next = clonePeriods(periods);
@@ -658,10 +677,11 @@ export function SchedulePage() {
               <div className="campus-sync-controls">
                 <label htmlFor="campus-date">Schedule date</label>
                 <input id="campus-date" type="date" value={campusDate} onChange={event => setCampusDate(event.currentTarget.value)} />
-                <button type="button" className="text-button" onClick={downloadCampusJson}>Download period JSON</button>
+                <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
               </div>
               {sharedPreview && <p className="campus-sync-note">Campus data is loaded. The shared preview stays in place until you leave preview mode.</p>}
               {[1, 2, 3, 4, 5, 6, 7].map(number => {
+                if (!visibleNumbers.includes(number)) return null;
                 const choices = numericCandidates(campusRows, number);
                 return choices.length > 1 ? <label className="campus-course-choice" key={number}>
                   <span>Period {number} has multiple active courses. Choose one:</span>
@@ -677,26 +697,6 @@ export function SchedulePage() {
                   </select>
                 </label> : null;
               })}
-              <div className="campus-responsive">
-                <div>
-                  <strong>PRIME, SELF &amp; Study Hall</strong>
-                  <p>Choose PRIME or Study Hall in Infinite Campus Responsive Schedule. Your SELF and selected sessions sync when you return.</p>
-                </div>
-                <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
-              </div>
-              {flexibleRows.length ? <ul className="campus-period-details">
-                {flexibleRows.map((row, index) => <li key={`${row.course_number}-${row.section}-${index}`}>
-                  <strong>{row.period}</strong> · {row.course || "Selected session"} · {row.room || "Room not listed"}
-                  {row.start_time && row.end_time ? ` · ${row.start_time}–${row.end_time}` : ""}
-                  {row.room && findRoomMatches(rooms, row.room).length !== 1 ? " · room not on map" : ""}
-                </li>)}
-              </ul> : <p className="campus-sync-note">No PRIME, SELF or Study Hall period appears for this date.</p>}
-              {otherCampusRows.length > 0 && <details className="campus-other-periods">
-                <summary>Other Campus periods ({otherCampusRows.length})</summary>
-                <ul className="campus-period-details">{otherCampusRows.map((row, index) => <li key={`${row.course_number}-${row.section}-${index}`}>
-                  <strong>{row.period}</strong> · {row.course || "Course"} · {row.room || "Room not listed"}
-                </li>)}</ul>
-              </details>}
             </>}
           </section>
           {sharedPreview && (
@@ -722,6 +722,9 @@ export function SchedulePage() {
               buildings={buildings}
               disabled={!roomsLoaded}
               campusRows={campusRows}
+              responsivePeriods={campusData && !sharedPreview ? responsivePeriods : []}
+              onResponsiveChange={handleResponsiveEdit}
+              visibleNumbers={visibleNumbers}
               onChange={handleEdit}
             />
             <div className="form-actions">
@@ -735,6 +738,9 @@ export function SchedulePage() {
                 <span aria-hidden="true">→</span>
               </button>
             </div>
+            {campusData && <div className="campus-json-action">
+              <button type="button" className="download-link" onClick={downloadCampusJson}>Download period JSON</button>
+            </div>}
           </form>
         </section>
         {generatedImage && <div ref={generatedMap} className="generated-map-result">

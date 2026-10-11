@@ -54,6 +54,13 @@ export function scheduleForDate(date: string): string {
   return ["Full", "M", "T", "W", "R", "F", "Full"][weekday];
 }
 
+export function visibleNumericPeriods(date: string): number[] {
+  const day = scheduleForDate(date);
+  if (day === "T" || day === "R") return [1, 2, 3, 4];
+  if (day === "W" || day === "F") return [5, 6, 7];
+  return [1, 2, 3, 4, 5, 6, 7];
+}
+
 export function placementsForDate(data: CampusPeriods, date: string): CampusPlacement[] {
   const day = scheduleForDate(date);
   const rows = data.periods.filter(row => row.schedule_name === day && activeOn(row, date));
