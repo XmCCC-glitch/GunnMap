@@ -178,14 +178,17 @@ export function SchedulePage() {
       setResponsivePeriods([]);
       invalidateGenerated();
     }
-    saveCampusPeriods(data);
+    const saved = saveCampusPeriods(data);
     setCampusData(data);
-    setCampusStatus(status);
+    setCampusStatus(saved ? status : data
+      ? `${status} for this page only. Browser storage is unavailable; the schedule may disappear on reload.`
+      : "Campus schedule removed for this page, but browser storage could not be cleared. It may return on reload.");
     setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   }
 
   async function importCampusJson(file: File | undefined) {
     if (!file) return;
+    campusSignInController.current?.abort();
     try {
       if (file.size > 1_000_000) throw new Error("Period JSON file is too large (1 MB maximum).");
       const data = parseCampusPeriods(JSON.parse(await file.text()) as unknown);

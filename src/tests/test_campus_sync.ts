@@ -116,13 +116,28 @@ test("saved Campus periods round-trip, ignore corrupt data, and can be forgotten
   try {
     const valid = { term: "S1", as_of: "2026-10-11", terms: ["S1"], schedules: ["W"], periods: [row("6", "J-10")] };
     assert.equal(loadSavedCampusPeriods(), null);
-    saveCampusPeriods(valid);
+    assert.equal(saveCampusPeriods(valid), true);
     assert.deepEqual(loadSavedCampusPeriods(), valid);
     assert.ok(![...store.values()].some(value => value.includes("password")));
     store.set("gunnmap.campus-periods.v1", "{not json");
     assert.equal(loadSavedCampusPeriods(), null);
-    saveCampusPeriods(null);
+    assert.equal(saveCampusPeriods(null), true);
     assert.equal(store.size, 0);
+  } finally {
+    (globalThis as { window?: unknown }).window = original;
+  }
+});
+
+test("Campus storage failures are reported for saves and forgetting", () => {
+  const original = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = { localStorage: {
+    setItem: () => { throw new Error("Storage full"); },
+    removeItem: () => { throw new Error("Storage unavailable"); },
+  } };
+  try {
+    const valid = { term: "S1", as_of: "2026-10-11", terms: ["S1"], schedules: ["W"], periods: [row("6", "J-10")] };
+    assert.equal(saveCampusPeriods(valid), false);
+    assert.equal(saveCampusPeriods(null), false);
   } finally {
     (globalThis as { window?: unknown }).window = original;
   }

@@ -80,12 +80,13 @@ export function loadSavedCampusPeriods(): CampusPeriods | null {
   }
 }
 
-export function saveCampusPeriods(data: CampusPeriods | null): void {
+export function saveCampusPeriods(data: CampusPeriods | null): boolean {
   try {
     if (data) window.localStorage.setItem(SAVED_PERIODS_KEY, JSON.stringify(data));
     else window.localStorage.removeItem(SAVED_PERIODS_KEY);
+    return true;
   } catch {
-    // Storage can be unavailable (private mode); the current page still has the data.
+    return false;
   }
 }
 
