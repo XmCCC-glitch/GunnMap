@@ -235,7 +235,7 @@ export function SchedulePage() {
               })}
             </>}
           </section>
-          {requiresReview && (
+          {requiresReview && !noClassToday && (
             <ScheduleReviewNotice review={editor.review} onConfirm={editor.confirmRooms} />
           )}
           {editor.sharedPreview && (
