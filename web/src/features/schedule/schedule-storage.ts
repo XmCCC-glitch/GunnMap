@@ -276,7 +276,7 @@ function saveTemplatesTransaction(templates: ScheduleTemplate[], cleanupAllowed:
     previousIndexValue = getCookie(TEMPLATES_INDEX_COOKIE_NAME);
     const previous = readTemplateIndex()?.entries ?? [];
     const entries = templates.map((template, slot) => {
-      const value = JSON.stringify({ name: template.name, ...JSON.parse(serializeSchedule(template.periods)) as Record<string, unknown> });
+      const value = JSON.stringify({ name: template.name, ...scheduleEnvelope(template.periods) });
       const reusable = previous.find(entry => getCookie(`${TEMPLATE_COOKIE_PREFIX}${entry}`) === value);
       const key = reusable ?? `${generation}_${slot}`;
       return { key, name: `${TEMPLATE_COOKIE_PREFIX}${key}`, value, changed: !reusable };
@@ -354,14 +354,18 @@ function parseSchedule(value: unknown): Period[] | null {
 }
 
 /** Compact repeated map revisions to keep eight full templates below HTTP cookie limits. */
-export function serializeSchedule(periods: Period[], version: 1 | 2 = 2) {
+function scheduleEnvelope(periods: Period[], version: 1 | 2 = 2) {
   const revisions = [...new Set(periods.filter(period => period.room.trim()).map(period => period.mapRevision))];
   const fields = periods.map(({ roomId: _id, mapRevision: _revision, ...period }) => period);
-  return JSON.stringify({ version, periods: fields,
+  return { version, periods: fields,
     ...(periods.some(period => period.roomId) ? { roomIds: periods.map(period => period.roomId ?? null) } : {}),
     ...(revisions.length === 1 && revisions[0] && periods.every(period => period.room.trim() || period.mapRevision === undefined) ? { mapRevision: revisions[0] }
       : periods.some(period => period.mapRevision) ? { mapRevisions: periods.map(period => period.mapRevision ?? null) } : {}),
-  });
+  };
+}
+
+export function serializeSchedule(periods: Period[], version: 1 | 2 = 2) {
+  return JSON.stringify(scheduleEnvelope(periods, version));
 }
 
 export function readSharedSchedule(): Period[] | null {

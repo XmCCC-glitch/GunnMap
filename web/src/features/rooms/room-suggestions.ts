@@ -1,18 +1,10 @@
 import autoComplete from "@tarekraafat/autocomplete.js";
 import { buildingName } from "./room-display.js";
 import { normalizeRoomInput } from "../../../../src/domain/room-matching.js";
-
-export interface RoomSuggestion {
-  id: string;
-  label: string;
-  building: string;
-  floor?: number;
-  aliases?: string[];
-}
+import type { RoomOption } from "./types.js";
 
 interface SuggestionOptions {
   getBuilding?: () => string;
-  onInput?: (value: string) => void;
 }
 
 interface SuggestionRecord {
@@ -20,17 +12,17 @@ interface SuggestionRecord {
   label: string;
   searchText: string;
   building: string;
-  floor?: number;
+  floor: number;
 }
 
 interface SelectionDetail {
-  selection?: { value?: SuggestionRecord };
+  selection: { value: SuggestionRecord };
 }
 
 const normalize = normalizeRoomInput;
 
-function humanAliases(room: RoomSuggestion) {
-  return (room.aliases ?? []).filter((alias) => !/^R\d{3}$/i.test(alias.trim()));
+function humanAliases(room: RoomOption) {
+  return room.aliases.filter((alias) => !/^R\d{3}$/i.test(alias.trim()));
 }
 
 function roomLabelVariant(label: string, input: string) {
@@ -40,7 +32,7 @@ function roomLabelVariant(label: string, input: string) {
   return `${parts[1]}${separator}${parts[2]}`;
 }
 
-function suggestionRecords(rooms: RoomSuggestion[], building: string, input: string): SuggestionRecord[] {
+function suggestionRecords(rooms: RoomOption[], building: string, input: string): SuggestionRecord[] {
   const eligible = rooms.filter((room) => !building || room.building === building);
   const labelCounts = new Map<string, number>();
   for (const room of eligible) {
@@ -69,7 +61,7 @@ function suggestionRecords(rooms: RoomSuggestion[], building: string, input: str
 
 export function mountRoomSuggestions(
   input: HTMLInputElement,
-  rooms: RoomSuggestion[],
+  rooms: RoomOption[],
   options: SuggestionOptions = {},
 ) {
   input.classList.add("room-suggestion-input");
@@ -115,28 +107,21 @@ export function mountRoomSuggestions(
     },
   });
 
-  const handleInput = () => options.onInput?.(input.value);
   // autocomplete.js clears its DOM input on Escape with a "clear" event;
   // publish the same input event so React and the saved schedule stay aligned.
   const handleClear = () => input.dispatchEvent(new Event("input", { bubbles: true }));
   const handleSelection = (event: Event) => {
     const detail = (event as CustomEvent<SelectionDetail>).detail;
-    const selected = detail.selection?.value;
-    if (!selected) return;
+    const selected = detail.selection.value;
     input.value = selected.label;
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
-  input.addEventListener("input", handleInput);
   input.addEventListener("clear", handleClear);
   input.addEventListener("selection", handleSelection);
 
   return {
-    refresh() {
-      instance.start(input.value);
-    },
     destroy() {
-      input.removeEventListener("input", handleInput);
       input.removeEventListener("clear", handleClear);
       input.removeEventListener("selection", handleSelection);
       instance.unInit();

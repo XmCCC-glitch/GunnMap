@@ -3,19 +3,21 @@ import { Link, useSearchParams } from "react-router-dom";
 import { GENERATED_MAP_SESSION_KEY } from "../features/schedule/schedule-storage.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { generatedMapMetadata, removeOfflineMap, savedOfflineMapInfo, saveMapOffline, type GeneratedMapMetadata, type SavedOfflineMap } from "../features/offline/offline-client.js";
-
-const imagePattern = /^\/output\/period_map_[0-9a-f]{32}\.png$/i;
+import { GENERATED_IMAGE } from "../../offline/policy.js";
+import { loadRoomDirectory } from "../features/rooms/room-api.js";
+import { useToast } from "../shared/toast.js";
 
 function savedImagePath() {
   try {
     const saved = window.sessionStorage.getItem(GENERATED_MAP_SESSION_KEY) ?? "";
-    return imagePattern.test(saved) ? saved : "";
+    return GENERATED_IMAGE.test(saved) ? saved : "";
   } catch {
     return "";
   }
 }
 
 export function GeneratedMapPage() {
+  const showToast = useToast();
   const [searchParams] = useSearchParams();
   const queryImage = searchParams.get("image") ?? "";
   const [failed, setFailed] = useState(false);
@@ -28,21 +30,36 @@ export function GeneratedMapPage() {
   const stage = useRef<HTMLDivElement>(null);
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
-  const validQueryImage = imagePattern.test(queryImage);
+  const validQueryImage = GENERATED_IMAGE.test(queryImage);
   const imagePath = savedImagePath();
-  const source = validQueryImage ? queryImage : imagePath || offlinePath;
+  const invalidQueryImage = Boolean(queryImage && !validQueryImage);
+  const source = invalidQueryImage ? "" : queryImage || imagePath || offlinePath;
 
   useEffect(() => {
     let current = true;
-    void savedOfflineMapInfo().then(info => {if (current) {setOfflineInfo(info); setOfflinePath(info?.path ?? "");}}).catch(() => {});
+    void savedOfflineMapInfo()
+      .then(info => {
+        if (current) {
+          setOfflineInfo(info);
+          setOfflinePath(info?.path ?? "");
+        }
+      })
+      .catch(() => {
+        if (current) showToast("The saved offline map could not be checked.");
+      });
     const controller = new AbortController();
-    void fetch('/api/rooms', { credentials: 'omit', signal: controller.signal }).then(async response => {
-      if (!response.ok) return;
-      const data = await response.json() as { map_revision?: unknown };
-      if (current && typeof data.map_revision === 'string' && /^[a-f0-9]{64}$/.test(data.map_revision)) setCurrentRevision(data.map_revision);
-    }).catch(() => {});
-    return () => {current = false; controller.abort();};
-  }, []);
+    void loadRoomDirectory(controller.signal)
+      .then(data => {
+        if (current) setCurrentRevision(data.map_revision);
+      })
+      .catch(() => {
+        if (current) showToast("The room directory could not be loaded. The map version cannot be checked.");
+      });
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [showToast]);
 
   useEffect(() => {
     setFailed(false);
@@ -51,13 +68,21 @@ export function GeneratedMapPage() {
   useEffect(() => {
     setMetadata(null);
     if (!source) return;
-    if (offlineInfo?.path === source) {setMetadata(offlineInfo); return;}
+    if (offlineInfo?.path === source) {
+      setMetadata(offlineInfo);
+      return;
+    }
     const controller = new AbortController();
-    void fetch(source, { method: 'HEAD', credentials: 'omit', signal: controller.signal }).then(response => {
-      if (response.ok && !controller.signal.aborted) setMetadata(generatedMapMetadata(response.headers));
-    }).catch(() => {});
+    void fetch(source, { method: "HEAD", credentials: "omit", signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error("Map metadata is unavailable.");
+        if (!controller.signal.aborted) setMetadata(generatedMapMetadata(response.headers));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) showToast("This map's version information could not be loaded.");
+      });
     return () => controller.abort();
-  }, [source, offlineInfo]);
+  }, [source, offlineInfo, showToast]);
 
   const controls = usePanzoom(stage, art, image, {
     active: Boolean(source) && !failed,
@@ -70,19 +95,24 @@ export function GeneratedMapPage() {
     setOfflineMessage("");
     try {
       if (source === offlinePath) {
-        await removeOfflineMap(); setOfflinePath(""); setOfflineInfo(null);
+        await removeOfflineMap();
+        setOfflinePath("");
+        setOfflineInfo(null);
         setOfflineMessage("Offline copy removed from this browser.");
       } else {
         await saveMapOffline(source);
         const saved = await savedOfflineMapInfo();
-        setOfflineInfo(saved); setOfflinePath(saved?.path ?? "");
+        setOfflineInfo(saved);
+        setOfflinePath(saved?.path ?? "");
         setOfflineMessage(saved?.path === source
           ? "Saved on this device for offline viewing. This replaces any earlier offline map."
           : "Another tab changed the saved offline map. The saved copy shown here has been refreshed.");
       }
     } catch (error) {
       setOfflineMessage(error instanceof Error ? error.message : "Offline saving failed. Try downloading the PNG.");
-    } finally {setSaving(false);}
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -148,7 +178,11 @@ export function GeneratedMapPage() {
           </div>
         </> : (
           <div className="generated-map-empty">
-            <p>{failed ? "This image is unavailable or has expired. Generate a new map from your schedule." : "Generate a map from your schedule to view it here."}</p>
+            <p>{invalidQueryImage
+              ? "This map link is invalid. Open a generated map from your schedule."
+              : failed
+                ? "This image is unavailable or has expired. Generate a new map from your schedule."
+                : "Generate a map from your schedule to view it here."}</p>
             {failed && offlinePath && offlinePath !== source && <Link className="download-link" to={`/generate-map?image=${encodeURIComponent(offlinePath)}`}>View previously saved offline map</Link>}
             <Link className="primary-button" to="/">
               Go to Schedule Map

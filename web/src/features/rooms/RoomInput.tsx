@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
-import { mountRoomSuggestions, type RoomSuggestion } from "./room-suggestions.js";
+import { mountRoomSuggestions } from "./room-suggestions.js";
+import type { RoomOption } from "./types.js";
 
 interface RoomInputProps {
   id: string;
   label: string;
   value: string;
   building?: string;
-  rooms: RoomSuggestion[];
+  rooms: RoomOption[];
   placeholder: string;
   className?: string;
   disabled?: boolean;
   invalid?: boolean;
   describedBy?: string;
   onValueChange(value: string): void;
-  onBlur?(value: string, building: string): void;
 }
 
 export function RoomInput({
@@ -28,11 +28,10 @@ export function RoomInput({
   invalid = false,
   describedBy,
   onValueChange,
-  onBlur,
 }: RoomInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const current = useRef({ building, onValueChange, onBlur });
-  current.current = { building, onValueChange, onBlur };
+  const current = useRef({ building, onValueChange });
+  current.current = { building, onValueChange };
 
   useEffect(() => {
     const input = inputRef.current;
@@ -41,12 +40,9 @@ export function RoomInput({
       getBuilding: () => current.current.building,
     });
     const handleInput = () => current.current.onValueChange(input.value);
-    const handleBlur = () => current.current.onBlur?.(input.value, current.current.building);
     input.addEventListener("input", handleInput);
-    input.addEventListener("blur", handleBlur);
     return () => {
       input.removeEventListener("input", handleInput);
-      input.removeEventListener("blur", handleBlur);
       suggestions.destroy();
     };
   }, [id, rooms]);

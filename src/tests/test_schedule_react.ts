@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { act, createElement } from "react";
 import { rooms as inventory, buildings } from "../project.js";
 import type { Period, ScheduleTemplate } from "../../web/src/features/schedule/types.js";
+import type { RoomData } from "../domain/room-contracts.js";
 
 // Mount the shipped React components and autocomplete implementation. Only
 // browser primitives missing in jsdom and external I/O are substituted.
@@ -29,6 +30,9 @@ const storage = await import("../../web/src/features/schedule/schedule-storage.j
 
 const currentRooms = inventory.map(room => ({ ...room, floor: room.floor ?? 1, aliases: room.aliases ?? [] }));
 const MAP_REVISION = "test-map-current";
+const roomDirectory: RoomData = {
+  rooms: currentRooms, buildings, map_revision: MAP_REVISION, map_revision_date: "2026-09-01",
+};
 const { bindCurrentRooms, scheduleReview } = await import("../../web/src/features/schedule/schedule-review.js");
 const immediateLocks = { request: async (_name: string, callback: () => unknown) => callback() };
 Object.defineProperty(navigator, "locks", { configurable: true, value: immediateLocks });
@@ -79,7 +83,7 @@ async function harness(options: { draft?: Period[]; shared?: Period[]; legacy?: 
   } });
   Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (url: string, init?: RequestInit) => {
     assert.equal(init?.credentials, "omit", "public room and render requests must not carry the local draft cookie");
-    if (url === "/api/rooms") return response({ rooms: currentRooms, buildings, map_revision: MAP_REVISION });
+    if (url === "/api/rooms") return response(roomDirectory);
     assert.equal(url, "/api/render");
     const periods = (JSON.parse(String(init?.body)) as { periods: Period[] }).periods;
     assert.ok(init?.signal);
@@ -264,6 +268,23 @@ test("saving and deleting templates participate in the existing undo history", a
     await h.clickLabel("Undo");
     assert.equal(storage.loadTemplates().length, 0);
     assert.equal(h.get<HTMLInputElement>("#period-1-room").value, "M3");
+  } finally { await h.close(); }
+});
+
+test("render API rejection displays its error and leaves the same schedule ready to retry", async () => {
+  const h = await harness({ draft: schedule("M3") });
+  try {
+    h.io.render = async () => response({ error: "Map storage is full. Try again later." }, false);
+    await h.submit();
+    assert.match(h.get(".toast-region").textContent!, /Map storage is full\. Try again later\./);
+    assert.equal(h.images.length, 0);
+    assert.equal(h.get<HTMLButtonElement>('form[aria-busy] button[type="submit"]').disabled, false);
+    assert.equal(h.get<HTMLInputElement>("#period-1-room").value, "M3");
+    h.io.render = async () => response({ image_url: "/output/period_map_11111111111111111111111111111111.png" });
+    await h.submit();
+    assert.equal(h.requests.length, 2);
+    assert.deepEqual(h.requests[1], h.requests[0]);
+    assert.ok(h.get("#generated-page"));
   } finally { await h.close(); }
 });
 
@@ -575,7 +596,7 @@ test("legacy rooms require explicit review and preserve their draft through edit
     const savedBefore = h.cookie(storage.DRAFT_COOKIE_NAME);
     sessionStorage.setItem(storage.GENERATED_MAP_SESSION_KEY, "/output/old.png");
     assert.ok(h.get('[aria-label="Review restored rooms"]'));
-    assert.equal(h.get<HTMLButtonElement>('button[type="submit"]').disabled, true);
+    assert.equal(h.get<HTMLButtonElement>('form[aria-busy] button[type="submit"]').disabled, true);
     await h.submit();
     assert.equal(h.requests.length, 0);
     assert.deepEqual(h.cookie(storage.DRAFT_COOKIE_NAME), savedBefore);

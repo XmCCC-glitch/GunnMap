@@ -18,8 +18,19 @@ const resources: Record<string, string[]> = {
 };
 // API revisions include generation/serialization code as well as data. A data-only
 // hash would incorrectly retain old payloads after the API response format changes.
-const apiInputs = ['src/web_app.ts', 'src/project.ts', 'src/data/room_regions.json', 'src/data/evacuation_data.json',
-  'src/evacuation.ts', 'src/validate_map_data.ts', 'src/domain/room-matching.ts', 'src/map_revision.ts', 'src/map/gunn_site_map.png'];
+const apiInputs = [
+  'src/web_app.ts',
+  'src/room_response.ts',
+  'src/domain/room-contracts.ts',
+  'src/project.ts',
+  'src/data/room_regions.json',
+  'src/data/evacuation_data.json',
+  'src/evacuation.ts',
+  'src/validate_map_data.ts',
+  'src/domain/room-matching.ts',
+  'src/map_revision.ts',
+  'src/map/gunn_site_map.png',
+];
 for (const path of ['/api/rooms', '/api/offline-rooms', '/api/evacuation-data']) resources[path] = apiInputs;
 for (const name of (await readdir(resolve(root, 'dist/web/assets'))).sort()) {
   if (/\.(?:js|css|woff2?|svg|png|webp)$/.test(name)) resources[`/assets/${name}`] = [`dist/web/assets/${name}`];
@@ -30,7 +41,7 @@ const manifest = await Promise.all(Object.entries(resources).map(async ([url, in
   return {url, revision: fingerprint.digest('hex')};
 }));
 const version = createHash('sha256').update(JSON.stringify(manifest));
-for (const path of ['web/offline/sw.ts', 'web/offline/policy.ts', 'src/domain/room-matching.ts']) {
+for (const path of ['web/offline/sw.ts', 'web/offline/policy.ts', 'src/domain/room-matching.ts', 'src/domain/generated-map-path.ts']) {
   version.update(path).update(await readFile(resolve(root, path)));
 }
 await build({

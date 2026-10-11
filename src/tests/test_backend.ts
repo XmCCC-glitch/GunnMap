@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import sharp from 'sharp';
-import { createApp, renderPeriods, resolveRoom } from '../web_app.js';
+import { createApp } from '../web_app.js';
+import { renderPeriods } from '../schedule_render.js';
+import { resolveRoom } from '../project.js';
 import { evacuationForRoom } from '../evacuation.js';
 import { rooms, roomData, ROOT } from '../project.js';
 import { renderRooms } from '../map_highlighter.js';
@@ -112,6 +114,7 @@ test('downloaded PNG includes all seven legend swatches without changing map coo
   const {data,info}=await sharp(await readFile(join(dir,result.image_url.split('/').pop()!))).raw().toBuffer({resolveWithObject:true});
   assert.deepEqual([info.width,info.height],roomData.image_size);
   assert.equal(result.selected.length, 7);
+  assert.deepEqual(Object.keys(result.selected[0]).sort(), ['building', 'color', 'evacuation', 'floor', 'id', 'label', 'marker', 'period', 'polygon']);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0],/Periods 1, 2, 3, 4, 5, 6, 7.*split/);
   const pixel=(x:number,y:number)=>Array.from(data.subarray((y*info.width+x)*info.channels,(y*info.width+x)*info.channels+3));

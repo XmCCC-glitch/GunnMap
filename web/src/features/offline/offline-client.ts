@@ -23,10 +23,6 @@ export async function savedOfflineMapInfo(): Promise<SavedOfflineMap | null> {
     : null;
 }
 
-export async function savedOfflineMap(): Promise<string> {
-  return (await savedOfflineMapInfo())?.path ?? '';
-}
-
 export async function saveMapOffline(path: string): Promise<void> {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw new Error('Offline saving is unavailable in this browser. Download the PNG instead.');
   const validPath = generatedImagePath(path, window.location.origin);

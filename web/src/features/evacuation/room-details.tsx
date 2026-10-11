@@ -1,13 +1,15 @@
 import type { Ref } from "react";
 import { buildingName } from "../rooms/room-display.js";
 import type { ScheduleEvacuationEntry } from "./types.js";
+import { assemblySummary } from "./formatters.js";
 
-export function assemblySummary(entry: ScheduleEvacuationEntry) {
-  if (entry.evacuation?.status !== "mapped") return "Assembly area not confirmed";
-  const reference = entry.evacuation.reference_label && !/^[A-Z]$/i.test(entry.evacuation.reference_label)
-    ? `${entry.evacuation.reference_label} · ` : "";
-  const destination = entry.evacuation.short_destination ?? entry.evacuation.destination;
-  return `${entry.evacuation.group} group · ${reference}${destination}`;
+export function scheduleEntryNote(entry: ScheduleEvacuationEntry): string {
+  switch (entry.status) {
+    case "located": return entry.evacuation.note;
+    case "review-required": return "Confirm this room in Schedule Map before using its current location.";
+    case "not-found": return "No matching room was found in the current directory. Review this room in Schedule Map.";
+    case "lookup-failed": return "Room lookup failed. Reload the page to try again.";
+  }
 }
 
 export function EvacuationPeriodPicker({ entries, selectedPeriod, onSelect }: {
@@ -40,8 +42,8 @@ export function EvacuationRoomDetails({ entry, hasMarkers, detailsRef }: {
       {entry ? (
         <>
           <p>{buildingName(entry.building)}{entry.floor !== null && ` · Floor ${entry.floor}`}</p>
-          <strong>{assemblySummary(entry)}</strong>
-          <p>{entry.evacuation?.note ?? "Assembly area not confirmed. Follow current school staff directions."}</p>
+          {entry.status === "located" && <strong>{assemblySummary(entry.evacuation)}</strong>}
+          <p>{scheduleEntryNote(entry)}</p>
         </>
       ) : <p>{hasMarkers
         ? "Select a period marker or a room button to view its location and assembly status."

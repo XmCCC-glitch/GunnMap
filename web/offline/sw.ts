@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { findRoomMatches } from '../../src/domain/room-matching.js';
+import type { RoomLookupResponse } from '../../src/domain/room-contracts.js';
 import { appRoute, GENERATED_IMAGE, isValidPng, NETWORK_GET_TIMEOUT_MS, PERSONAL_CACHE, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER, PUBLIC_CACHE_PREFIX, PUBLIC_MANIFEST_KEY, UNSAVED_IMAGE_TIMEOUT_MS } from './policy.js';
 
 declare const __OFFLINE_VERSION__: string;
@@ -143,7 +144,7 @@ async function savedImage(path: string): Promise<Response | undefined> {
     const cache = await caches.open(PERSONAL_CACHE);
     const response = await cache.match(PERSONAL_IMAGE_KEY);
     if (!response || response.headers.get(PERSONAL_SOURCE_HEADER) !== path) return;
-    if (await isValidPng(response.clone())) return response;
+    if (await isValidPng(response)) return response;
     await cache.delete(PERSONAL_IMAGE_KEY);
   } catch {
     // Unavailable browser storage is handled like an unavailable saved image.
@@ -151,17 +152,13 @@ async function savedImage(path: string): Promise<Response | undefined> {
   return undefined;
 }
 
-interface OfflineRoom {
-  id: string; label: string; building: string; aliases?: string[];
-}
-interface OfflineDirectory { rooms: OfflineRoom[]; map_size: [number, number]; map_revision: string; map_revision_date: string }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const string = (value: unknown): value is string => typeof value === 'string';
 const nullableString = (value: unknown) => value === null || string(value);
 const point = (value: unknown): value is [number, number] => Array.isArray(value) && value.length === 2 && value.every(n => typeof n === 'number' && Number.isFinite(n));
 
 /** Validate the fields used by matching, room details and map overlays. */
-function validDirectory(value: unknown): value is OfflineDirectory {
+function validDirectory(value: unknown): value is RoomLookupResponse {
   if (!record(value) || !string(value.map_revision) || !/^[a-f0-9]{64}$/.test(value.map_revision)
     || !string(value.map_revision_date) || !/^\d{4}-\d{2}-\d{2}$/.test(value.map_revision_date)
     || !point(value.map_size) || !value.map_size.every(n => Number.isInteger(n) && n > 0)
@@ -169,7 +166,7 @@ function validDirectory(value: unknown): value is OfflineDirectory {
   const ids = new Set<string>();
   return value.rooms.every(room => {
     if (!record(room) || !string(room.id) || !room.id || ids.has(room.id) || !string(room.label) || !room.label
-      || !string(room.building) || !room.building || (room.aliases !== undefined && (!Array.isArray(room.aliases) || !room.aliases.every(string)))
+      || !string(room.building) || !room.building || !Array.isArray(room.aliases) || !room.aliases.every(string)
       || typeof room.floor !== 'number' || !Number.isInteger(room.floor) || room.floor < 1
       || !point(room.marker) || !Array.isArray(room.polygon) || room.polygon.length < 3 || !room.polygon.every(point)) return false;
     const evacuation = room.evacuation;
@@ -182,7 +179,7 @@ function validDirectory(value: unknown): value is OfflineDirectory {
   });
 }
 
-async function readDirectory(response: Response | undefined): Promise<OfflineDirectory | null> {
+async function readDirectory(response: Response | undefined): Promise<RoomLookupResponse | null> {
   if (!response?.ok) return null;
   try {
     const data: unknown = await response.clone().json();
@@ -190,8 +187,8 @@ async function readDirectory(response: Response | undefined): Promise<OfflineDir
   } catch { return null; }
 }
 
-let directoryPromise: Promise<OfflineDirectory | null> | undefined;
-function cachedDirectory(cache: Cache): Promise<OfflineDirectory | null> {
+let directoryPromise: Promise<RoomLookupResponse | null> | undefined;
+function cachedDirectory(cache: Cache): Promise<RoomLookupResponse | null> {
   directoryPromise ??= (async () => {
     const response = await cache.match('/api/offline-rooms');
     const data = await readDirectory(response);
@@ -224,7 +221,7 @@ function restoreDirectory(): Promise<void> {
 async function offlineLookup(url: URL): Promise<Response> {
   const input = url.searchParams.get('q')?.trim() ?? '';
   if (!input) return Response.json({error: 'Enter a room number or room alias.'}, {status: 400});
-  let data: OfflineDirectory | null = null;
+  let data: RoomLookupResponse | null = null;
   try { data = await cachedDirectory(await caches.open(publicCache)); }
   catch { /* Missing or inaccessible storage uses the same recovery message. */ }
   if (!data) return unavailable('The offline classroom directory is unavailable. Reconnect to download it again.');

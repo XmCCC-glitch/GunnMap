@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createApp, renderPeriods, resolveRoom, type AppOptions } from '../web_app.js';
+import { createApp, type AppOptions } from '../web_app.js';
+import { renderPeriods } from '../schedule_render.js';
+import { resolveRoom } from '../project.js';
 import { MAP_REVISION } from '../map_revision.js';
 import { GeneratedMapStore } from '../generated_map_store.js';
 import { PublicResponseCache } from '../http_cache.js';
@@ -79,6 +81,23 @@ test('live render rejects stale cached browser room identities before generating
     assert.equal((await post(base, browserHeaders, JSON.stringify({ periods: current }))).status, 200);
     // Headerless CLI clients keep the original metadata-optional API contract.
     assert.equal((await post(base, {}, JSON.stringify({ periods: validPeriods }))).status, 200);
+  });
+});
+
+test('render fields reject non-string JSON values before reserving image storage', async () => {
+  await withApp(async (base, dir) => {
+    for (const field of ['building', 'room', 'color'] as const) {
+      const valid = validPeriods[0][field];
+      for (const value of [[valid], { value: valid }, null, 101, true, undefined]) {
+        const periods = validPeriods.map((period, index) => index ? period : { ...period, [field]: value });
+        const response = await post(base, {}, JSON.stringify({ periods }));
+        assert.equal(response.status, 400, `${field}: ${JSON.stringify(value)}`);
+        assert.match((await response.json()).error, /building, room and color must be strings/);
+      }
+    }
+    const invalidEmptySlot = validPeriods.map((period, index) => index === 6 ? { ...period, room: [] } : period);
+    assert.equal((await post(base, {}, JSON.stringify({ periods: invalidEmptySlot }))).status, 400);
+    assert.deepEqual(await readdir(dir), [], 'invalid fields do not reserve or write PNGs or sidecars');
   });
 });
 

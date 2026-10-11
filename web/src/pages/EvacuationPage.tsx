@@ -1,42 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { readCurrentSchedule } from "../features/schedule/schedule-storage.js";
-import { scheduleReview } from "../features/schedule/schedule-review.js";
-import type { RoomData } from "../features/rooms/types.js";
-import { assemblySummary, EvacuationPeriodPicker, EvacuationRoomDetails } from "../features/evacuation/room-details.js";
+import { evacuationDestination } from "../features/evacuation/formatters.js";
+import { EvacuationPeriodPicker, EvacuationRoomDetails, scheduleEntryNote } from "../features/evacuation/room-details.js";
+import { ScheduleMarkers } from "../features/evacuation/ScheduleMarkers.js";
+import { useEvacuationData } from "../features/evacuation/useEvacuationData.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { buildingName } from "../features/rooms/room-display.js";
-import type {
-  EvacuationOverview,
-  ScheduleEvacuationEntry,
-  ScheduleLookupResponse,
-} from "../features/evacuation/types.js";
+import type { EvacuationOverview, ScheduleEvacuationEntry, LocatedScheduleEntry } from "../features/evacuation/types.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
-import "@awesome.me/webawesome/dist/components/tooltip/tooltip.js";
-
-type EntryWithMarker = ScheduleEvacuationEntry & {
-  marker: [number, number];
-};
 
 function entryRoute(entry: ScheduleEvacuationEntry) {
-  if (entry.reviewRequired) return `${entry.room} → Review this room on the current map`;
-  if (!entry.evacuation || entry.evacuation.status !== "mapped") {
-    return `${entry.room} → Assembly area not confirmed`;
+  switch (entry.status) {
+    case "review-required": return `${entry.room} → Review this room on the current map`;
+    case "not-found": return `${entry.room} → Room not found in the current directory`;
+    case "lookup-failed": return `${entry.room} → Room lookup failed`;
+    case "located": return `${entry.room} → ${evacuationDestination(entry.evacuation)}`;
   }
-
-  const reference = entry.evacuation.reference_label
-    && !/^[A-Z]$/i.test(entry.evacuation.reference_label)
-    ? `${entry.evacuation.reference_label} · `
-    : "";
-  const destination = entry.evacuation.short_destination
-    ?? entry.evacuation.destination;
-
-  return `${entry.room} → ${reference}${destination} (${entry.evacuation.group})`;
-}
-
-function markerGroupKey(entry: EntryWithMarker) {
-  return entry.id || `${entry.marker[0]}:${entry.marker[1]}`;
 }
 
 function sourceProvenance(overview: EvacuationOverview) {
@@ -54,72 +34,9 @@ function sourceProvenance(overview: EvacuationOverview) {
   return `User-supplied reference: ${sourceName}. Reference revision date: ${revision}. Verification date: ${verified}.`;
 }
 
-function ScheduleMarkers({
-  entries,
-  mapSize,
-  prefix,
-  onSelect,
-  selectedPeriod,
-}: {
-  entries: EntryWithMarker[];
-  mapSize: [number, number];
-  prefix: string;
-  onSelect: (period: number) => void;
-  selectedPeriod?: number | null;
-}) {
-  return entries.map(entry => {
-    const tooltipId = `${prefix}-period-tooltip-${entry.period}`;
-    const groupKey = markerGroupKey(entry);
-    const siblings = entries.filter(
-      candidate => markerGroupKey(candidate) === groupKey,
-    );
-    const siblingIndex = siblings.findIndex(
-      candidate => candidate.period === entry.period,
-    );
-    const offset = (siblingIndex - (siblings.length - 1) / 2) * 22;
-    const markerId = `${prefix}-period-marker-${entry.period}`;
-    const building = entry.building ? `\n${buildingName(entry.building)}` : "";
-    const tooltipText = `P${entry.period} · ${entry.room}${building}\n${assemblySummary(entry)}`;
-    const style = {
-      "--period-color": entry.color,
-      left: `calc(${entry.marker[0] / mapSize[0] * 100}% + ${offset}px)`,
-      top: `${entry.marker[1] / mapSize[1] * 100}%`,
-    } as CSSVariables;
-
-    return (
-      <span className="evacuation-period-marker-group" key={entry.period}>
-        <button
-          className="evacuation-period-marker"
-          type="button"
-          aria-label={`Period ${entry.period}, room ${entry.room}`}
-          aria-describedby={tooltipId}
-          aria-pressed={selectedPeriod === undefined ? undefined : selectedPeriod === entry.period}
-          aria-controls={selectedPeriod === undefined ? undefined : "evacuation-selected-room"}
-          id={markerId}
-          style={style}
-          onClick={() => onSelect(entry.period)}
-          onPointerDown={event => event.stopPropagation()}
-        >
-          P{entry.period}
-        </button>
-        <wa-tooltip
-          id={tooltipId}
-          className="schedule-room-tooltip"
-          for={markerId}
-          placement="top"
-        >
-          {tooltipText}
-        </wa-tooltip>
-      </span>
-    );
-  });
-}
-
 export function EvacuationPage() {
   const showToast = useToast();
-  const [overview, setOverview] = useState<EvacuationOverview | null>(null);
-  const [entries, setEntries] = useState<ScheduleEvacuationEntry[]>([]);
-  const [mapSize, setMapSize] = useState<[number, number]>([2448, 1584]);
+  const { overview, entries, mapSize, overviewError, scheduleError } = useEvacuationData();
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
   const infoDialog = useRef<HTMLDialogElement>(null);
@@ -130,7 +47,7 @@ export function EvacuationPage() {
   const selectedDetails = useRef<HTMLElement>(null);
   const selectedEntry = entries.find(entry => entry.period === selectedPeriod);
   const markerEntries = entries.filter(
-    (entry): entry is EntryWithMarker => entry.marker !== null,
+    (entry): entry is LocatedScheduleEntry => entry.status === "located",
   );
 
   const mapControls = usePanzoom(viewerStage, viewerArt, viewerImage, {
@@ -141,88 +58,6 @@ export function EvacuationPage() {
   useEffect(() => {
     if (viewerOpen && selectedPeriod !== null) selectedDetails.current?.focus({ preventScroll: true });
   }, [selectedPeriod, viewerOpen]);
-
-  useEffect(() => {
-    let current = true;
-    const controller = new AbortController();
-    const request = { credentials: "omit", signal: controller.signal } as const;
-
-    void fetch("/api/evacuation-data", request)
-      .then(async response => {
-        if (!response.ok) throw new Error("Evacuation data is unavailable.");
-        return await response.json() as EvacuationOverview;
-      })
-      .then(data => {
-        if (current) setOverview(data);
-      })
-      .catch(() => {
-        if (current) showToast("Evacuation data could not be loaded.");
-      });
-
-    const periods = readCurrentSchedule();
-    const selected = periods
-      .map((period, index) => ({ ...period, period: index + 1, room: period.room.trim() }))
-      .filter(period => period.room);
-
-    if (selected.length) {
-      void (async () => {
-        const inventoryResponse = await fetch("/api/rooms", request);
-        if (!inventoryResponse.ok) throw new Error("Room inventory is unavailable.");
-        const inventory = await inventoryResponse.json() as RoomData;
-        const needsReview = new Set(scheduleReview(periods, inventory.rooms, inventory.map_revision)
-          .map(item => item.index + 1));
-        // Repeated periods share one lookup, while each keeps its own marker.
-        const lookups = new Map<string, Promise<ScheduleLookupResponse>>();
-        const results = await Promise.all(selected.map(async period => {
-          const unresolved = (reviewRequired: boolean) => ({
-            entry: {
-              period: period.period, id: "", room: period.room, building: period.building,
-              color: period.color, floor: null, reviewRequired, marker: null, evacuation: null,
-            } satisfies ScheduleEvacuationEntry,
-            mapSize: null,
-          });
-          if (needsReview.has(period.period)) return unresolved(true);
-          try {
-            const id = period.roomId!;
-            let lookup = lookups.get(id);
-            if (!lookup) {
-              lookup = fetch("/api/room-lookup?q=" + encodeURIComponent(id), request)
-                .then(async response => {
-                  if (!response.ok) throw new Error("Room lookup failed.");
-                  return await response.json() as ScheduleLookupResponse;
-                });
-              lookups.set(id, lookup);
-            }
-            const result = await lookup;
-            if (result.map_revision !== inventory.map_revision) return unresolved(true);
-            const room = result.rooms.find(candidate => candidate.id === id
-              && (!period.building || candidate.building === period.building));
-            if (!room) return unresolved(true);
-            return {
-              entry: {
-                period: period.period, id: room.id, room: room.label, building: room.building,
-                color: period.color, floor: room.floor, reviewRequired: false,
-                marker: room.marker, evacuation: room.evacuation,
-              } satisfies ScheduleEvacuationEntry,
-              mapSize: result.map_size,
-            };
-          } catch { return unresolved(false); }
-        }));
-        if (!current) return;
-        setEntries(results.map(result => result.entry));
-        const dimensions = results.find(result => result.mapSize)?.mapSize;
-        if (dimensions) setMapSize(dimensions);
-      })().catch(() => {
-        if (!current) return;
-        setEntries(selected.map(period => ({
-          period: period.period, id: "", room: period.room, building: period.building,
-          color: period.color, floor: null, reviewRequired: true, marker: null, evacuation: null,
-        })));
-        showToast("Your saved rooms could not be checked against the current map.");
-      });
-    }
-    return () => { current = false; controller.abort(); };
-  }, [showToast]);
 
   const openViewer = () => {
     setSelectedPeriod(null);
@@ -254,7 +89,7 @@ export function EvacuationPage() {
   const validationClassName = overview?.validationIssues.length
     ? "is-error"
     : "";
-  const reviewRequired = entries.some(entry => entry.reviewRequired);
+  const reviewRequired = entries.some(entry => entry.status === "review-required" || entry.status === "not-found");
 
   return (
     <>
@@ -309,6 +144,8 @@ export function EvacuationPage() {
               <button className="download-link" type="button" onClick={() => infoDialog.current?.showModal()}>View source and required evidence</button>
             </div>
           )}
+          {overviewError && <p className="is-error" role="status">{overviewError}</p>}
+          {scheduleError && <p className="is-error" role="status">{scheduleError}</p>}
           {reviewRequired && (
             <p className="evacuation-schedule-review" role="status">
               Some saved rooms need confirmation on the current campus map. Their markers are hidden until reviewed.
@@ -384,9 +221,7 @@ export function EvacuationPage() {
                           : "Choose a building to confirm this room"}
                         {entry.floor !== null && ` · Floor ${entry.floor}`}
                       </small>
-                      <p className="schedule-evacuation-note">{entry.reviewRequired
-                        ? "Confirm this room in Schedule Map before using its current location."
-                        : entry.evacuation?.note ?? "This room could not be located. Check its name and try again."}</p>
+                      <p className="schedule-evacuation-note">{scheduleEntryNote(entry)}</p>
                     </article>
                   );
                 })}
@@ -426,7 +261,7 @@ export function EvacuationPage() {
               <article className="panel route-group" key={key} style={style}>
                 <h3>
                   <span className="route-swatch" aria-hidden="true" />
-                  {group.title || `${key} markings`}
+                  {group.title}
                 </h3>
                 <ul>
                   {group.labels.map(label => <li key={label}>{label}</li>)}
