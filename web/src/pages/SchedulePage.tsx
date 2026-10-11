@@ -20,7 +20,7 @@ import { useToast } from "../shared/toast.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { isPages } from "../features/pages/site-data.js";
 import {
-  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, mapFromCampus,
+  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, isNoClassDate, mapFromCampus,
   needsFridayStudyHall, needsWednesdayPrime, numericCandidates, placementsForDate,
   responsiveColor, responsivePlacements, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
@@ -53,9 +53,10 @@ export function SchedulePage() {
   const rooms = directory?.rooms ?? EMPTY_ROOMS;
   const buildings = directory?.buildings ?? EMPTY_BUILDINGS;
   const requiresReview = editor.review.length > 0;
-  const visibleNumbers = campusData && !editor.sharedPreview
+  const noClassToday = Boolean(campusData && !editor.sharedPreview && isNoClassDate(campusData.calendar, campusDate));
+  const visibleNumbers = noClassToday ? [] : campusData && !editor.sharedPreview
     ? visibleNumericPeriods(campusDate) : [1, 2, 3, 4, 5, 6, 7];
-  const campusRows = campusData ? placementsForDate(campusData, campusDate) : [];
+  const campusRows = campusData && !noClassToday ? placementsForDate(campusData, campusDate) : [];
 
   useEffect(() => {
     let active = true;
@@ -90,6 +91,11 @@ export function SchedulePage() {
 
   useEffect(() => {
     if (!campusData || !directory || editorRef.current.sharedPreview) return;
+    if (isNoClassDate(campusData.calendar, campusDate)) {
+      setResponsivePeriods([]);
+      invalidateGenerated();
+      return;
+    }
     const rows = placementsForDate(campusData, campusDate);
     const imported = mapFromCampus(editorRef.current.periods, rows);
     if (JSON.stringify(imported) !== JSON.stringify(editorRef.current.periods)) {
@@ -208,8 +214,9 @@ export function SchedulePage() {
                 <input id="campus-date" type="date" value={campusDate} onChange={event => setCampusDate(event.currentTarget.value)} />
                 <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
               </div>
+              {!campusData.calendar && <p className="campus-sync-note">School calendar unavailable; weekday breaks may not be detected.</p>}
               {editor.sharedPreview && <p className="campus-sync-note">Campus data is loaded. The shared preview stays in place until you leave preview mode.</p>}
-              {[1, 2, 3, 4, 5, 6, 7].map(number => {
+              {!noClassToday && [1, 2, 3, 4, 5, 6, 7].map(number => {
                 if (!visibleNumbers.includes(number)) return null;
                 const choices = numericCandidates(campusRows, number);
                 return choices.length > 1 ? <label className="campus-course-choice" key={number}>
@@ -259,7 +266,7 @@ export function SchedulePage() {
             aria-busy={!roomsLoaded}
             onSubmit={event => {
               event.preventDefault();
-              if (roomsLoaded) void render.generate(editor.periods, rooms, requiresReview, editorForm.current, {
+              if (roomsLoaded && !noClassToday) void render.generate(editor.periods, rooms, requiresReview, editorForm.current, {
                 visibleNumbers,
                 mapRevision: directory?.map_revision,
                 extras: campusData && !editor.sharedPreview ? responsivePeriods : [],
@@ -270,6 +277,9 @@ export function SchedulePage() {
               });
             }}
           >
+            {noClassToday ? <div className="no-class-day" role="status">
+              <h3>No Class Today, Enjoy your break!</h3>
+            </div> : <>
             <PeriodEditor
               periods={editor.periods}
               rooms={rooms}
@@ -295,6 +305,7 @@ export function SchedulePage() {
                 <span aria-hidden="true">→</span>
               </button>
             </div>
+            </>}
             {campusData && <div className="campus-json-action">
               <button type="button" className="download-link" onClick={downloadCampusJson}>Download period JSON</button>
             </div>}

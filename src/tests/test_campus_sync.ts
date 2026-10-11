@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  mapFromCampus, needsFridayStudyHall, needsWednesdayPrime, placementsForDate, responsiveColor,
+  isNoClassDate, mapFromCampus, needsFridayStudyHall, needsWednesdayPrime, placementsForDate, responsiveColor,
   responsivePlacements, scheduleForDate, visibleNumericPeriods,
   type CampusPeriods, type CampusPlacement,
 } from "../../web/src/features/schedule/campus-sync.js";
@@ -51,4 +51,19 @@ test("Campus date sync keeps only active placements and recognizes responsive pe
   assert.equal(imported[5].room, "J-10");
   assert.equal(imported[0].room, "");
   assert.equal(findRoomMatches(rooms, "H-03")[0]?.label, "H3");
+});
+
+test("Campus calendar hides weekends and non-school weekdays without guessing outside coverage", () => {
+  const calendar = {
+    start_date: "2026-08-13", end_date: "2027-06-03",
+    school_days: ["2026-10-09", "2026-10-12", "2026-11-12"],
+    no_school_days: ["2026-11-11"],
+  };
+  assert.equal(isNoClassDate(calendar, "2026-10-10"), true);
+  assert.equal(isNoClassDate(calendar, "2026-10-12"), false);
+  assert.equal(isNoClassDate(calendar, "2026-11-11"), true);
+  assert.equal(isNoClassDate(calendar, "2026-11-23"), true);
+  assert.equal(isNoClassDate(calendar, "2027-07-05"), false);
+  assert.equal(isNoClassDate(null, "2026-11-11"), false);
+  assert.equal(isNoClassDate(null, "2026-10-10"), true);
 });

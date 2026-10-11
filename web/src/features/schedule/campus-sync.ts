@@ -24,6 +24,14 @@ export interface CampusPeriods {
   terms: string[];
   schedules: string[];
   periods: CampusPlacement[];
+  calendar?: CampusCalendar | null;
+}
+
+export interface CampusCalendar {
+  start_date: string;
+  end_date: string;
+  school_days: string[];
+  no_school_days: string[];
 }
 
 export async function fetchCampusPeriods(): Promise<CampusPeriods> {
@@ -52,6 +60,15 @@ export function activeOn(row: CampusPlacement, date: string): boolean {
 export function scheduleForDate(date: string): string {
   const weekday = new Date(`${date}T12:00:00`).getDay();
   return ["Full", "M", "T", "W", "R", "F", "Full"][weekday];
+}
+
+export function isNoClassDate(calendar: CampusCalendar | null | undefined, date: string): boolean {
+  const weekday = new Date(`${date}T12:00:00`).getDay();
+  if (weekday === 0 || weekday === 6) return true;
+  if (!calendar) return false;
+  if (calendar.school_days.includes(date)) return false;
+  return calendar.no_school_days.includes(date)
+    || (calendar.start_date <= date && date <= calendar.end_date);
 }
 
 export function visibleNumericPeriods(date: string): number[] {
