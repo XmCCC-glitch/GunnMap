@@ -3,7 +3,7 @@ import type { Period } from "./types.js";
 export const CAMPUS_BRIDGE = "http://127.0.0.1:8765";
 /** Test-phase backend that signs in to ClassLink for the Pages site. */
 export const CAMPUS_SYNC_URL: string = import.meta.env?.VITE_CAMPUS_SYNC_URL
-  || "https://leo-linux.taild88ae1.ts.net:8443";
+  || "https://gunnmap-sync.tail5ba45a.ts.net";
 const SAVED_PERIODS_KEY = "gunnmap.campus-periods.v1";
 export const CAMPUS_RESPONSIVE_URL = "https://pausdca.infinitecampus.org/campus/nav-wrapper/student/portal/student/responsive-schedule?appName=paloalto";
 
