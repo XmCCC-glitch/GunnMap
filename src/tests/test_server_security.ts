@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createApp, type AppOptions } from '../web_app.js';
-import { renderPeriods } from '../schedule_render.js';
-import { resolveRoom } from '../project.js';
-import { MAP_REVISION } from '../map_revision.js';
 import { GeneratedMapStore } from '../generated_map_store.js';
 import { PublicResponseCache } from '../http_cache.js';
 import { HttpError, RenderQueue, RenderRateLimiter } from '../server_policy.js';
@@ -59,58 +56,6 @@ test('render boundary rejects cross-site/simple requests and accepts same-origin
     assert.equal((await post(base, { Origin: 'https://attacker.example', 'X-Forwarded-Host': 'attacker.example', 'X-Forwarded-Proto': 'https' })).status, 403);
     assert.equal((await post(base, { Origin: base })).status, 403);
   }, { publicOrigin: 'https://map.example' });
-});
-
-test('live render rejects stale cached browser room identities before generating images', async () => {
-  await withApp(async (base, dir) => {
-    const roomId = resolveRoom('A', 'A101').id;
-    const current = validPeriods.map(period => period.room
-      ? { ...period, roomId, mapRevision: MAP_REVISION }
-      : { ...period });
-    const browserHeaders = { Origin: base, 'Sec-Fetch-Site': 'same-origin' };
-    const stale = current.map(period => period.room ? { ...period, mapRevision: '0'.repeat(64) } : period);
-    const wrong = current.map(period => period.room ? { ...period, roomId: 'R999' } : period);
-    for (const periods of [stale, wrong, validPeriods]) {
-      const rejected = await post(base, browserHeaders, JSON.stringify({ periods }));
-      assert.equal(rejected.status, 409);
-      assert.match((await rejected.json()).error, /Reload the page and review/);
-      assert.equal(rejected.headers.get('Cache-Control'), 'no-store');
-      assert.deepEqual(await readdir(dir), [], 'mismatched identities must not reserve/write PNGs or sidecars');
-    }
-    assert.equal((await post(base, { 'Sec-Fetch-Site': 'same-origin' }, JSON.stringify({ periods: validPeriods }))).status, 409);
-    assert.equal((await post(base, browserHeaders, JSON.stringify({ periods: current }))).status, 200);
-    // Headerless CLI clients keep the original metadata-optional API contract.
-    assert.equal((await post(base, {}, JSON.stringify({ periods: validPeriods }))).status, 200);
-  });
-});
-
-test('render fields reject non-string JSON values before reserving image storage', async () => {
-  await withApp(async (base, dir) => {
-    for (const field of ['building', 'room', 'color'] as const) {
-      const valid = validPeriods[0][field];
-      for (const value of [[valid], { value: valid }, null, 101, true, undefined]) {
-        const periods = validPeriods.map((period, index) => index ? period : { ...period, [field]: value });
-        const response = await post(base, {}, JSON.stringify({ periods }));
-        assert.equal(response.status, 400, `${field}: ${JSON.stringify(value)}`);
-        assert.match((await response.json()).error, /building, room and color must be strings/);
-      }
-    }
-    const invalidEmptySlot = validPeriods.map((period, index) => index === 6 ? { ...period, room: [] } : period);
-    assert.equal((await post(base, {}, JSON.stringify({ periods: invalidEmptySlot }))).status, 400);
-    assert.deepEqual(await readdir(dir), [], 'invalid fields do not reserve or write PNGs or sidecars');
-  });
-});
-
-test('direct rendering validates supplied versions and IDs while preserving metadata-absent compatibility', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'gunnmap-direct-version-'));
-  try {
-    const stale = validPeriods.map(period => period.room ? { ...period, mapRevision: '0'.repeat(64) } : period);
-    const wrong = validPeriods.map(period => period.room ? { ...period, roomId: 'R999' } : period);
-    await assert.rejects(renderPeriods(stale, dir), statusError(409));
-    await assert.rejects(renderPeriods(wrong, dir), statusError(409));
-    assert.deepEqual(await readdir(dir), []);
-    assert.equal((await renderPeriods(validPeriods, dir)).selected[0].label, 'A101');
-  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('render rate limits ignore forged forwarded identities and include a retry interval', async () => {
@@ -185,73 +130,6 @@ test('disk reservations reject oversubscription and preserve earlier maps throug
   }, { mapStorageBytes: 10, mapMaxBytes: 4 });
 });
 
-test('incremental accounting notices external additions, in-place growth and deletion before committing', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'gunnmap-external-budget-'));
-  const store = new GeneratedMapStore(dir, 12, 4, 60_000);
-  const old = `period_map_${'a'.repeat(32)}.png`;
-  const external = `period_map_${'b'.repeat(32)}.png`;
-  try {
-    await writeFile(join(dir, old), 'old');
-    const admitted = await store.reserve();
-    await writeFile(join(dir, external), '123456');
-    await assert.rejects(admitted.write(Buffer.from('new')), statusError(503), 'an operator addition cannot bypass an existing reservation');
-    admitted.release();
-    await rm(join(dir, external));
-    const second = await store.reserve();
-    await writeFile(join(dir, old), '123456789');
-    await assert.rejects(second.write(Buffer.from('new')), statusError(503), 'in-place external growth is also accounted');
-    second.release();
-    await rm(join(dir, old));
-    const third = await store.reserve();
-    const name = await third.write(Buffer.from('new'));
-    assert.equal(await readFile(join(dir, name), 'utf8'), 'new');
-    const fourth = await store.reserve();
-    fourth.release();
-  } finally { store.close(); await rm(dir, { recursive: true, force: true }); }
-});
-
-test('metadata consumes storage, remains bound to its image across restart and expires with it', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'gunnmap-provenance-'));
-  const metadata = { map_revision: '1'.repeat(64), generated_at: '2026-09-03T12:00:00.000Z' };
-  const budget = 2 * (Buffer.byteLength(JSON.stringify(metadata)) + 3) + 3;
-  const store = new GeneratedMapStore(dir, budget, 4, 1000);
-  let restarted: GeneratedMapStore | undefined;
-  try {
-    const first = await store.reserve();
-    const filename = await first.write(Buffer.from('png'), undefined, metadata);
-    const second = await store.reserve();
-    const secondName = await second.write(Buffer.from('png'), undefined, metadata);
-    await assert.rejects(store.reserve(), statusError(503), 'sidecar bytes are included in the storage budget');
-    store.close();
-    restarted = new GeneratedMapStore(dir, budget, 4, 1000);
-    const saved = await restarted.openImage(filename);
-    assert.deepEqual(saved.metadata, metadata);
-    await saved.handle.close();
-    const old = new Date(Date.now() - 2000);
-    await utimes(join(dir, filename), old, old);
-    await restarted.cleanup();
-    assert.deepEqual((await readdir(dir)).sort(), [secondName, secondName + '.json'].sort());
-    await assert.rejects(restarted.openImage(filename), statusError(404));
-  } finally { store.close(); restarted?.close(); await rm(dir, { recursive: true, force: true }); }
-});
-
-test('generated image store refuses symbolic links and does not follow metadata links', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'gunnmap-link-store-'));
-  const store = new GeneratedMapStore(dir, 1000, 4, 60_000);
-  const name = `period_map_${'a'.repeat(32)}.png`;
-  const linked = `period_map_${'b'.repeat(32)}.png`;
-  try {
-    await writeFile(join(dir, name), 'png');
-    await symlink(join(dir, name), join(dir, linked));
-    await symlink(join(dir, name), join(dir, name + '.json'));
-    await assert.rejects(store.openImage(linked), statusError(404));
-    const image = await store.openImage(name);
-    assert.equal(image.metadata, undefined);
-    assert.equal(await image.handle.readFile('utf8'), 'png');
-    await image.handle.close();
-  } finally { store.close(); await rm(dir, { recursive: true, force: true }); }
-});
-
 test('CSP and browser safety headers survive errors and 304; HTTPS policy is explicit', async () => {
   await withApp(async base => {
     const first = await fetch(base + '/api/rooms');
@@ -264,7 +142,6 @@ test('CSP and browser safety headers survive errors and 304; HTTPS policy is exp
       assert.match(policy, /base-uri 'none'/);
       assert.match(policy, /frame-ancestors 'none'/);
       assert.match(policy, /img-src 'self' data: blob:/);
-      assert.match(policy, /connect-src 'self' http:\/\/127\.0\.0\.1:8765/);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
       assert.equal(response.headers.get('x-frame-options'), 'DENY');
       assert.equal(response.headers.get('referrer-policy'), 'no-referrer');

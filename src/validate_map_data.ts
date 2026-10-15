@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mapRevisionFor, MAP_REVISION_DATE } from './map_revision.js';
 
 export interface ValidationResult { errors: string[]; warnings: string[] }
 type RecordValue = Record<string, unknown>;
@@ -15,9 +14,6 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 const numbers = (value: unknown, length: number): value is number[] => Array.isArray(value) && value.length === length && value.every(item => typeof item === 'number' && Number.isFinite(item));
 const point = (value: unknown): value is Point => numbers(value, 2);
 const size = (value: unknown): value is Point => point(value) && value.every(n => Number.isInteger(n) && n > 0);
-const fingerprint = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const date = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
-  && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const inBounds = ([x, y]: Point, bounds?: Point) => x >= 0 && y >= 0 && (!bounds || (x <= bounds[0] && y <= bounds[1]));
 const cross = (a: Point, b: Point, c: Point) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 const epsilon = 1e-7;
@@ -69,8 +65,7 @@ function parseCsv(value: string) {
 }
 
 /** Pure, read-only validation. Unknown assignments are allowed; routes are never inferred. */
-export function validateMapData(roomInput: unknown, csv: string, evacuationInput: unknown,
-  current?: {mapRevision: string; inventorySha256: string; mapRevisionDate?: string; mapImageSha256?: string}): ValidationResult {
+export function validateMapData(roomInput: unknown, csv: string, evacuationInput: unknown): ValidationResult {
   const errors: string[] = [], warnings: string[] = [];
   const fail = (path: string, message: string) => errors.push(`${path}: ${message}`);
   const roomData = record(roomInput) ? roomInput : {};
@@ -133,45 +128,16 @@ export function validateMapData(roomInput: unknown, csv: string, evacuationInput
   const evacuation = record(evacuationInput) ? evacuationInput : {};
   if (!record(evacuationInput)) fail('evacuation_data', 'expected an object');
   const source = record(evacuation.provenance) ? evacuation.provenance : {};
-  if (!['supplied_reference', 'official_site_map', 'official_evacuation_plan'].includes(String(source.sourceKind))) fail('provenance.sourceKind', 'expected supplied_reference, official_site_map, or official_evacuation_plan');
-  if (typeof evacuation.routesAvailable !== 'boolean') fail('routesAvailable', 'expected an explicit boolean');
-  const routesAvailable = evacuation.routesAvailable === true;
+  if (source.sourceKind !== 'supplied_reference' && source.sourceKind !== 'official_site_map') fail('provenance.sourceKind', 'expected supplied_reference or official_site_map');
+  if (evacuation.routesAvailable !== undefined && typeof evacuation.routesAvailable !== 'boolean') fail('routesAvailable', 'expected a boolean');
+  const routesAvailable = evacuation.routesAvailable !== false;
   for (const key of ['originalFilename', 'sourceFile']) if (!text(source[key])) fail(`provenance.${key}`, 'expected non-empty text');
-  if (!fingerprint(source.sourceImageSha256)) fail('provenance.sourceImageSha256', 'expected a SHA-256 fingerprint');
+  if (typeof source.sourceImageSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(source.sourceImageSha256)) fail('provenance.sourceImageSha256', 'expected a SHA-256 fingerprint');
   const sourceSize = size(source.imageSize) ? source.imageSize : undefined;
   if (!sourceSize) fail('provenance.imageSize', 'expected two positive integer dimensions');
   for (const key of ['sourceRevisionDate', 'verifiedOn']) {
     const value = source[key];
-    if (value !== null && !date(value)) fail(`provenance.${key}`, 'expected a real YYYY-MM-DD date, or null when unknown');
-  }
-  const review = record(evacuation.review) ? evacuation.review : {};
-  if (!record(evacuation.review)) fail('review', 'expected an explicit school-plan review record');
-  if (!['pending_school_plan', 'verified_school_plan'].includes(String(review.status))) fail('review.status', 'expected pending_school_plan or verified_school_plan');
-  if (!date(review.checkedOn)) fail('review.checkedOn', 'expected a real YYYY-MM-DD review date');
-  for (const key of ['checkedBy', 'note']) if (!text(review[key])) fail(`review.${key}`, 'expected non-empty text');
-  for (const key of ['mapRevision', 'inventorySha256']) if (!fingerprint(review[key])) fail(`review.${key}`, 'expected a SHA-256 fingerprint');
-  if (current && review.mapRevision !== current.mapRevision) fail('review.mapRevision', 'does not match the current campus map and inventory; review the plan again');
-  if (current && review.inventorySha256 !== current.inventorySha256) fail('review.inventorySha256', 'does not match the current room inventory; review assignments again');
-  const missingEvidence = Array.isArray(review.missingEvidence) && review.missingEvidence.every(text) ? review.missingEvidence : undefined;
-  if (!missingEvidence) fail('review.missingEvidence', 'expected a list of missing evidence');
-  if (review.status === 'pending_school_plan') {
-    if (!missingEvidence?.length) fail('review.missingEvidence', 'document the school-plan evidence still required');
-    if (review.verifiedBy !== null || source.verifiedOn !== null) fail('review', 'a pending school plan must not claim verification');
-    if (routesAvailable) fail('routesAvailable', 'requires a verified current school evacuation plan');
-  }
-  if (review.status === 'verified_school_plan') {
-    if (source.sourceKind !== 'official_evacuation_plan') fail('provenance.sourceKind', 'verified routes require a school-issued evacuation plan, not a site map or supplied reference');
-    if (source.sourceFile === roomData.base_image || (current?.mapImageSha256 && source.sourceImageSha256 === current.mapImageSha256)) fail('provenance.sourceFile', 'the campus site map is not school evacuation-plan evidence');
-    if (!date(source.sourceRevisionDate)) fail('provenance.sourceRevisionDate', 'a verified plan requires its revision date');
-    if (!date(source.verifiedOn)) fail('provenance.verifiedOn', 'a verified plan requires a verification date');
-    if (!text(review.verifiedBy)) fail('review.verifiedBy', 'record who confirmed the plan with school staff');
-    if (missingEvidence?.length) fail('review.missingEvidence', 'must be empty before a plan can be verified');
-    if (!routesAvailable) fail('routesAvailable', 'verified school-plan data must explicitly enable its reviewed assignments');
-    if (date(source.verifiedOn)) {
-      if (date(source.sourceRevisionDate) && source.verifiedOn < source.sourceRevisionDate) fail('provenance.verifiedOn', 'cannot precede the plan revision date');
-      if (current?.mapRevisionDate && source.verifiedOn < current.mapRevisionDate) fail('provenance.verifiedOn', 'cannot precede the current campus map revision');
-      if (date(review.checkedOn) && review.checkedOn < source.verifiedOn) fail('review.checkedOn', 'cannot precede school-plan verification');
-    }
+    if (value !== null && !(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value)) fail(`provenance.${key}`, 'expected a real YYYY-MM-DD date, or null when unknown');
   }
   const groupNames = ['red', 'blue', 'green', 'black'];
   const groups = record(evacuation.groups) ? evacuation.groups : {};
@@ -263,20 +229,7 @@ export function validateMapFiles(directory: string): ValidationResult {
     : directory;
   const readJson = (name: string): unknown => JSON.parse(readFileSync(resolve(dataDirectory, name), 'utf8'));
   const roomData = readJson('room_regions.json'), evacuation = readJson('evacuation_data.json');
-  let current: {mapRevision: string; inventorySha256: string; mapRevisionDate?: string; mapImageSha256?: string} | undefined;
-  if (record(roomData) && text(roomData.base_image)) {
-    try {
-      const inventoryBytes = readFileSync(resolve(dataDirectory, 'room_regions.json'));
-      const imageBytes = readFileSync(resolve(directory, roomData.base_image));
-      current = {
-        mapRevision: mapRevisionFor(imageBytes, inventoryBytes),
-        inventorySha256: createHash('sha256').update(inventoryBytes).digest('hex'),
-        mapImageSha256: createHash('sha256').update(imageBytes).digest('hex'),
-        ...(dataDirectory === resolve(directory, 'src/data') ? {mapRevisionDate: MAP_REVISION_DATE} : {}),
-      };
-    } catch { /* The image check below reports missing or malformed files. */ }
-  }
-  const result = validateMapData(roomData, readFileSync(resolve(dataDirectory, 'room_index.csv'), 'utf8'), evacuation, current);
+  const result = validateMapData(roomData, readFileSync(resolve(dataDirectory, 'room_index.csv'), 'utf8'), evacuation);
   function checkImage(path: unknown, expected: unknown, label: string, expectedHash?: unknown) {
     if (!text(path) || !size(expected)) return;
     try {

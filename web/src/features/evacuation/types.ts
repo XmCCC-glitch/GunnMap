@@ -1,5 +1,4 @@
 import type { EvacuationInfo } from "../rooms/types.js";
-import type { EvacuationReview } from "../../../../src/domain/evacuation-review.js";
 
 export interface EvacuationGroupInfo {
   title: string;
@@ -12,7 +11,7 @@ export interface EvacuationGroupInfo {
 
 export interface EvacuationOverview {
   provenance: {
-    sourceKind: "supplied_reference" | "official_site_map" | "official_evacuation_plan";
+    sourceKind: "supplied_reference" | "official_site_map";
     originalFilename: string;
     sourceFile: string;
     sourceImageSha256: string;
@@ -20,33 +19,30 @@ export interface EvacuationOverview {
     verifiedOn: string | null;
     imageSize: [number, number];
   };
-  review: EvacuationReview;
   routesAvailable: boolean;
   groups: Record<string, EvacuationGroupInfo>;
   inventoryExceptions: Record<string, string>;
   validationIssues: string[];
 }
 
-interface ScheduleRoomPeriod {
+export interface ScheduleEvacuationEntry {
   period: number;
+  id: string;
   room: string;
   building: string;
   color: string;
+  marker: [number, number] | null;
+  evacuation: EvacuationInfo | null;
 }
 
-export interface LocatedScheduleEntry extends ScheduleRoomPeriod {
-  status: "located";
-  id: string;
-  floor: number;
-  marker: [number, number];
-  evacuation: EvacuationInfo;
+export interface ScheduleLookupResponse {
+  rooms: Array<{
+    id: string;
+    label: string;
+    building: string;
+    floor: number;
+    marker: [number, number];
+    evacuation: EvacuationInfo;
+  }>;
+  map_size: [number, number];
 }
-
-export interface UnlocatedScheduleEntry extends ScheduleRoomPeriod {
-  status: "review-required" | "not-found" | "lookup-failed";
-  floor: null;
-  marker: null;
-  evacuation: null;
-}
-
-export type ScheduleEvacuationEntry = LocatedScheduleEntry | UnlocatedScheduleEntry;

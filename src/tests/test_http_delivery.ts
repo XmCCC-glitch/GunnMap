@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { get, type IncomingHttpHeaders } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -11,7 +11,6 @@ import { gunzipSync } from 'node:zlib';
 import { createApp, type AppOptions } from '../web_app.js';
 import { evacuationForRoom, evacuationOverview } from '../evacuation.js';
 import { rooms, roomData, ROOT } from '../project.js';
-import { MAP_REVISION, MAP_REVISION_DATE } from '../map_revision.js';
 
 interface Response { status: number; headers: IncomingHttpHeaders; body: Buffer }
 function request(url: string, headers: Record<string, string> = {}): Promise<Response> {
@@ -132,8 +131,6 @@ test('room lookup and offline inventory preserve the React SPA API contracts', a
     const offline = JSON.parse((await request(base + '/api/offline-rooms')).body.toString());
     assert.equal(offline.rooms.length, rooms.length);
     assert.deepEqual(offline.map_size, roomData.image_size);
-    assert.equal(offline.map_revision, MAP_REVISION);
-    assert.equal(offline.map_revision_date, MAP_REVISION_DATE);
     for (const query of ['N-214', 'Ｎ－２１４', 'n—214', 'R 148', 'N214 （R 148）']) {
       const response = await request(`${base}/api/room-lookup?q=${encodeURIComponent(query)}`);
       assert.equal(response.status, 200);
@@ -144,7 +141,6 @@ test('room lookup and offline inventory preserve the React SPA API contracts', a
       assert.equal(result.rooms[0].floor, 2);
       assert.equal(result.rooms[0].evacuation.group, null);
       assert.deepEqual(result.map_size, roomData.image_size);
-      assert.equal(result.map_revision, MAP_REVISION);
       assert.deepEqual(result.rooms[0], offline.rooms.find((room: { id: string }) => room.id === 'R148'));
     }
     const k6 = JSON.parse((await request(base + '/api/room-lookup?q=K6')).body.toString());
@@ -165,55 +161,6 @@ test('room lookup and offline inventory preserve the React SPA API contracts', a
   });
 });
 
-test('personal image GET and HEAD stream original provenance and reject links', async () => {
-  await withApp(async (base, dir) => {
-    const filename = `period_map_${'a'.repeat(32)}.png`;
-    const linked = `period_map_${'b'.repeat(32)}.png`;
-    const legacy = `period_map_${'c'.repeat(32)}.png`;
-    const revision = '0'.repeat(64);
-    const generatedAt = '2026-09-03T12:00:00.000Z';
-    assert.notEqual(revision, MAP_REVISION);
-    await writeFile(join(dir, filename), Buffer.alloc(256 * 1024, 42));
-    await writeFile(join(dir, filename + '.json'), JSON.stringify({ map_revision: revision, generated_at: generatedAt }));
-    await writeFile(join(dir, legacy), 'legacy image');
-    await symlink(join(dir, filename), join(dir, linked));
-    const head = await fetch(`${base}/output/${filename}`, { method: 'HEAD' });
-    assert.equal(head.status, 200);
-    assert.equal(head.headers.get('Cache-Control'), 'no-store');
-    assert.equal(head.headers.get('Content-Length'), String(256 * 1024));
-    assert.equal(head.headers.get('X-GunnMap-Map-Revision'), revision);
-    assert.equal(head.headers.get('X-GunnMap-Generated-At'), generatedAt);
-    assert.equal((await head.arrayBuffer()).byteLength, 0);
-    const image = await request(`${base}/output/${filename}`);
-    assert.deepEqual(image.body, Buffer.alloc(256 * 1024, 42));
-    assert.equal(image.headers['x-gunnmap-map-revision'], revision);
-    const unknown = await request(`${base}/output/${legacy}`);
-    assert.equal(unknown.status, 200);
-    assert.equal(unknown.headers['x-gunnmap-map-revision'], undefined, 'legacy bytes must not be labeled with today\'s revision');
-    await writeFile(join(dir, legacy + '.json'), 'x'.repeat(1025));
-    assert.equal((await request(`${base}/output/${legacy}`)).headers['x-gunnmap-map-revision'], undefined);
-    assert.equal((await request(`${base}/output/${linked}`)).status, 404);
-    assert.equal((await fetch(`${base}/output/${linked}`, { method: 'HEAD' })).status, 404);
-    assert.equal((await request(`${base}/output/${filename}.json`)).status, 404);
-  });
-});
-
-test('disconnecting a personal download leaves the server available', async () => {
-  await withApp(async (base, dir) => {
-    const filename = `period_map_${'a'.repeat(32)}.png`;
-    await writeFile(join(dir, filename), Buffer.alloc(4 * 1024 * 1024, 42));
-    await new Promise<void>((resolve, reject) => {
-      const download = get(`${base}/output/${filename}`, response => {
-        response.once('data', () => { response.destroy(); resolve(); });
-        response.on('error', error => { if ((error as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(error); });
-      });
-      download.on('error', reject);
-    });
-    assert.equal((await request(base + '/api/rooms')).status, 200);
-    assert.equal((await fetch(`${base}/output/${filename}`, { method: 'HEAD' })).status, 200);
-  });
-});
-
 test('expired personal URLs return 404 and legacy latest maps are never served', async () => {
   await withApp(async (base, dir) => {
     const stale = `period_map_${'a'.repeat(32)}.png`;
@@ -230,11 +177,8 @@ test('expired personal URLs return 404 and legacy latest maps are never served',
     assert.equal(personal.headers['cache-control'], 'no-store');
     assert.equal(personal.headers.etag, undefined);
     assert.equal(personal.body.toString(), 'image');
-    // GET/HEAD validate their own descriptor without acquiring the storage lock.
-    // Expired URLs are refused immediately; scheduled reconciliation deletes them.
-    for (let attempt = 0; attempt < 100 && (await readdir(dir)).includes(stale); attempt++) await delay(20);
     assert.deepEqual((await readdir(dir)).sort(), [fresh, 'period_map.png'].sort());
-  }, { retentionMs: 60_000, cleanupIntervalMs: 20 });
+  }, { retentionMs: 60_000 });
 });
 
 test('retention starts with the server and closes its timer on shutdown', async () => {

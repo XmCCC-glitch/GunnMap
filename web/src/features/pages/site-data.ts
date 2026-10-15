@@ -33,7 +33,7 @@ export async function lookupRoom(query: string): Promise<RoomLookupResponse> {
   if (!query.trim()) throw new Error("Enter a room number or room alias.");
   if (isPages) {
     const data = await directory();
-    return { ...data, rooms: findRoomMatches(data.rooms, query) as LocatedRoom[] };
+    return { rooms: findRoomMatches(data.rooms, query) as LocatedRoom[], map_size: data.map_size };
   }
   return readJson<RoomLookupResponse>(`/api/room-lookup?q=${encodeURIComponent(query)}`);
 }

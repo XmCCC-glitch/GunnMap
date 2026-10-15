@@ -8,8 +8,6 @@ import { join } from 'node:path';
 import { ROOT } from '../project.js';
 import { evacuationForRoom, evacuationOverview, type EvacuationData, type EvacuationProvenance } from '../evacuation.js';
 import { validateMapData, validateMapFiles } from '../validate_map_data.js';
-import { mapRevisionFor } from '../map_revision.js';
-import type { EvacuationReview } from '../domain/evacuation-review.js';
 
 interface Fixture {
   roomData: {
@@ -18,7 +16,7 @@ interface Fixture {
   };
   csv: string;
   evacuationData: {
-    provenance: EvacuationProvenance; review: EvacuationReview; routesAvailable?: boolean; ranges: unknown[][];
+    provenance: EvacuationProvenance; routesAvailable?: boolean; ranges: unknown[][];
     groups: EvacuationData['groups']; inventoryExceptions: Record<string, string>;
     exact: Record<string, unknown[]>; whole: Record<string, unknown[]>;
   };
@@ -33,9 +31,7 @@ function fixture(): Fixture {
     },
     csv: 'id,label,building,purpose\nR001,A101,A,\n',
     evacuationData: {
-      provenance: {...reference.provenance, sourceKind: 'official_evacuation_plan', sourceFile: 'reference.png', imageSize: [200, 100], verifiedOn: '2026-10-03'},
-      review: {...reference.review, status: 'verified_school_plan', verifiedBy: 'Synthetic school-plan fixture', missingEvidence: []},
-      routesAvailable: true,
+      provenance: {...reference.provenance, sourceFile: 'reference.png', imageSize: [200, 100]},
       groups: Object.fromEntries(['red', 'blue', 'green', 'black'].map(name => [name, {
         title: `${name} test group`, color: '#123456', destination: 'Test assembly area',
         shortDestination: 'Test area',
@@ -80,8 +76,6 @@ test('current site map provenance is exact and evacuation routes remain unavaila
 test('unavailable routes cannot silently retain historical assignments', () => {
   const value = fixture();
   value.evacuationData.provenance.sourceKind = 'official_site_map';
-  value.evacuationData.provenance.verifiedOn = null;
-  value.evacuationData.review = {...reference.review};
   value.evacuationData.routesAvailable = false;
   assert.match(validate(value).errors.join('\n'), /assignments must be empty while routes are unavailable/);
   value.evacuationData.ranges = [];
@@ -138,7 +132,6 @@ test('source dimensions, dates and assignment focus rectangles are validated', (
   rejectsMutation(v => v.evacuationData.ranges[0][3] = 'purple', /unknown assembly group/);
   const value = fixture();
   value.evacuationData.provenance.verifiedOn = '2024-02-29';
-  value.evacuationData.provenance.sourceRevisionDate = '2024-02-28';
   assert.deepEqual(validate(value).errors, []);
 });
 
@@ -199,9 +192,6 @@ test('file validation catches image metadata drift before a changed source mispl
     return bytes;
   };
   value.evacuationData.provenance.sourceImageSha256 = createHash('sha256').update(header(200, 100)).digest('hex');
-  const inventoryBytes = Buffer.from(JSON.stringify(value.roomData));
-  value.evacuationData.review.mapRevision = mapRevisionFor(header(100, 100), inventoryBytes);
-  value.evacuationData.review.inventorySha256 = createHash('sha256').update(inventoryBytes).digest('hex');
   try {
     await Promise.all([
       writeFile(join(directory, 'room_regions.json'), JSON.stringify(value.roomData)),

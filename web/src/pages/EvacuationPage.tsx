@@ -1,23 +1,52 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { evacuationDestination } from "../features/evacuation/formatters.js";
-import { EvacuationPeriodPicker, EvacuationRoomDetails, scheduleEntryNote } from "../features/evacuation/room-details.js";
-import { ScheduleMarkers } from "../features/evacuation/ScheduleMarkers.js";
-import { useEvacuationData } from "../features/evacuation/useEvacuationData.js";
+import { readCurrentSchedule } from "../features/schedule/schedule-storage.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { buildingName } from "../features/rooms/room-display.js";
-import type { EvacuationOverview, ScheduleEvacuationEntry, LocatedScheduleEntry } from "../features/evacuation/types.js";
+import type {
+  EvacuationOverview,
+  ScheduleEvacuationEntry,
+} from "../features/evacuation/types.js";
 import type { CSSVariables } from "../shared/css-types.js";
 import { useToast } from "../shared/toast.js";
-import { siteUrl } from "../features/pages/site-data.js";
+import { loadEvacuation, lookupRoom, siteUrl } from "../features/pages/site-data.js";
+import "@awesome.me/webawesome/dist/components/tooltip/tooltip.js";
+
+type EntryWithMarker = ScheduleEvacuationEntry & {
+  marker: [number, number];
+};
 
 function entryRoute(entry: ScheduleEvacuationEntry) {
-  switch (entry.status) {
-    case "review-required": return `${entry.room} → Review this room on the current map`;
-    case "not-found": return `${entry.room} → Room not found in the current directory`;
-    case "lookup-failed": return `${entry.room} → Room lookup failed`;
-    case "located": return `${entry.room} → ${evacuationDestination(entry.evacuation)}`;
+  if (!entry.evacuation || entry.evacuation.status !== "mapped") {
+    return `${entry.room} → Assembly area not confirmed`;
   }
+
+  const reference = entry.evacuation.reference_label
+    && !/^[A-Z]$/i.test(entry.evacuation.reference_label)
+    ? `${entry.evacuation.reference_label} · `
+    : "";
+  const destination = entry.evacuation.short_destination
+    ?? entry.evacuation.destination;
+
+  return `${entry.room} → ${reference}${destination} (${entry.evacuation.group})`;
+}
+
+function markerGroupKey(entry: EntryWithMarker) {
+  return entry.id || `${entry.marker[0]}:${entry.marker[1]}`;
+}
+
+function markerRoute(entry: ScheduleEvacuationEntry) {
+  if (entry.evacuation?.status !== "mapped") {
+    return "Assembly area not confirmed";
+  }
+
+  const reference = entry.evacuation.reference_label
+    && !/^[A-Z]$/i.test(entry.evacuation.reference_label)
+    ? `${entry.evacuation.reference_label} · `
+    : "";
+  const destination = entry.evacuation.short_destination
+    ?? entry.evacuation.destination;
+
+  return `${entry.evacuation.group} group · ${reference}${destination}`;
 }
 
 function sourceProvenance(overview: EvacuationOverview) {
@@ -29,26 +58,78 @@ function sourceProvenance(overview: EvacuationOverview) {
   if (overview.provenance.sourceKind === "official_site_map") {
     return `School site map: ${sourceName}. Map revision date: ${revision}. Evacuation routes and assembly points have not been verified.`;
   }
-  if (overview.provenance.sourceKind === "official_evacuation_plan") {
-    return `School evacuation plan: ${sourceName}. Plan revision date: ${revision}. Verified on: ${verified}. Confirmed by: ${overview.review.verifiedBy ?? "not recorded"}.`;
-  }
   return `User-supplied reference: ${sourceName}. Reference revision date: ${revision}. Verification date: ${verified}.`;
+}
+
+function ScheduleMarkers({
+  entries,
+  mapSize,
+  prefix,
+  onSelect,
+}: {
+  entries: EntryWithMarker[];
+  mapSize: [number, number];
+  prefix: string;
+  onSelect: (period: number) => void;
+}) {
+  return entries.map(entry => {
+    const tooltipId = `${prefix}-period-tooltip-${entry.period}`;
+    const groupKey = markerGroupKey(entry);
+    const siblings = entries.filter(
+      candidate => markerGroupKey(candidate) === groupKey,
+    );
+    const siblingIndex = siblings.findIndex(
+      candidate => candidate.period === entry.period,
+    );
+    const offset = (siblingIndex - (siblings.length - 1) / 2) * 22;
+    const markerId = `${prefix}-period-marker-${entry.period}`;
+    const building = entry.building ? `\n${buildingName(entry.building)}` : "";
+    const tooltipText = `P${entry.period} · ${entry.room}${building}\n${markerRoute(entry)}`;
+    const style = {
+      "--period-color": entry.color,
+      left: `calc(${entry.marker[0] / mapSize[0] * 100}% + ${offset}px)`,
+      top: `${entry.marker[1] / mapSize[1] * 100}%`,
+    } as CSSVariables;
+
+    return (
+      <span className="evacuation-period-marker-group" key={entry.period}>
+        <button
+          className="evacuation-period-marker"
+          type="button"
+          aria-label={`Period ${entry.period}, room ${entry.room}`}
+          aria-describedby={tooltipId}
+          id={markerId}
+          style={style}
+          onClick={() => onSelect(entry.period)}
+        >
+          P{entry.period}
+        </button>
+        <wa-tooltip
+          id={tooltipId}
+          className="schedule-room-tooltip"
+          for={markerId}
+          placement="top"
+        >
+          {tooltipText}
+        </wa-tooltip>
+      </span>
+    );
+  });
 }
 
 export function EvacuationPage() {
   const showToast = useToast();
-  const { overview, entries, mapSize, overviewError, scheduleError } = useEvacuationData();
+  const [overview, setOverview] = useState<EvacuationOverview | null>(null);
+  const [entries, setEntries] = useState<ScheduleEvacuationEntry[]>([]);
+  const [mapSize, setMapSize] = useState<[number, number]>([2448, 1584]);
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<number | null>(null);
   const infoDialog = useRef<HTMLDialogElement>(null);
   const mapDialog = useRef<HTMLDialogElement>(null);
   const viewerStage = useRef<HTMLDivElement>(null);
   const viewerArt = useRef<HTMLDivElement>(null);
   const viewerImage = useRef<HTMLImageElement>(null);
-  const selectedDetails = useRef<HTMLElement>(null);
-  const selectedEntry = entries.find(entry => entry.period === selectedPeriod);
   const markerEntries = entries.filter(
-    (entry): entry is LocatedScheduleEntry => entry.status === "located",
+    (entry): entry is EntryWithMarker => entry.marker !== null,
   );
 
   const mapControls = usePanzoom(viewerStage, viewerArt, viewerImage, {
@@ -57,11 +138,93 @@ export function EvacuationPage() {
   });
 
   useEffect(() => {
-    if (viewerOpen && selectedPeriod !== null) selectedDetails.current?.focus({ preventScroll: true });
-  }, [selectedPeriod, viewerOpen]);
+    let current = true;
+
+    void loadEvacuation()
+      .then(data => {
+        if (current) setOverview(data);
+      })
+      .catch(() => {
+        if (current) showToast("Evacuation data could not be loaded.");
+      });
+
+    const selected = readCurrentSchedule()
+      .map((period, index) => ({
+        ...period,
+        period: index + 1,
+        room: period.room.trim(),
+      }))
+      .filter(period => period.room);
+
+    if (!selected.length) {
+      return () => {
+        current = false;
+      };
+    }
+
+    void Promise.all(selected.map(async period => {
+      try {
+        const result = await lookupRoom(period.room);
+        const matches = period.building
+          ? result.rooms.filter(room => room.building === period.building)
+          : result.rooms;
+
+        if (matches.length !== 1) {
+          return {
+            entry: {
+              period: period.period,
+              id: "",
+              room: period.room,
+              building: period.building,
+              color: period.color,
+              marker: null,
+              evacuation: null,
+            } satisfies ScheduleEvacuationEntry,
+            mapSize: null,
+          };
+        }
+
+        const room = matches[0];
+        return {
+          entry: {
+            period: period.period,
+            id: room.id,
+            room: room.label,
+            building: room.building,
+            color: period.color,
+            marker: room.marker,
+            evacuation: room.evacuation,
+          } satisfies ScheduleEvacuationEntry,
+          mapSize: result.map_size,
+        };
+      } catch {
+        return {
+          entry: {
+            period: period.period,
+            id: "",
+            room: period.room,
+            building: period.building,
+            color: period.color,
+            marker: null,
+            evacuation: null,
+          } satisfies ScheduleEvacuationEntry,
+          mapSize: null,
+        };
+      }
+    })).then(results => {
+      if (!current) return;
+      setEntries(results.map(result => result.entry));
+
+      const dimensions = results.find(result => result.mapSize)?.mapSize;
+      if (dimensions) setMapSize(dimensions);
+    });
+
+    return () => {
+      current = false;
+    };
+  }, [showToast]);
 
   const openViewer = () => {
-    setSelectedPeriod(null);
     setViewerOpen(true);
     mapDialog.current?.showModal();
   };
@@ -72,6 +235,8 @@ export function EvacuationPage() {
   };
 
   const scrollToEntry = (period: number) => {
+    if (viewerOpen) return;
+
     const item = document.getElementById(`schedule-period-${period}`);
     item?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     item?.focus({ preventScroll: true });
@@ -90,7 +255,6 @@ export function EvacuationPage() {
   const validationClassName = overview?.validationIssues.length
     ? "is-error"
     : "";
-  const reviewRequired = entries.some(entry => entry.status === "review-required" || entry.status === "not-found");
 
   return (
     <>
@@ -114,13 +278,13 @@ export function EvacuationPage() {
             <div className="map-links">
               <a
                 className="download-link"
-                href="/evacuation-map.png"
+                href={siteUrl("/evacuation-map.png")}
                 download="gunn-campus-map-2026.png"
                 onClick={event => {
                   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
                   event.preventDefault();
                   void import("../features/maps/download-public-map.js")
-                    .then(({ downloadPublicMap }) => downloadPublicMap("/map.webp", "gunn-campus-map-2026.png"))
+                    .then(({ downloadPublicMap }) => downloadPublicMap("/evacuation-map.webp", "gunn-campus-map-2026.png"))
                     .catch(error => showToast(error instanceof Error ? error.message : "The PNG could not be downloaded."));
                 }}
               >
@@ -130,29 +294,9 @@ export function EvacuationPage() {
           </div>
 
           <p className="map-help" role="status">
-            {overview?.routesAvailable
-              ? "Room assembly assignments are based on the verified school evacuation plan."
-              : "This September 3, 2026 school site map has no evacuation routes or assembly points. Room assembly assignments are unconfirmed."}
-            {" "}Follow current school staff directions during an emergency.
+            This September 3, 2026 school site map has no evacuation routes or assembly points.
+            Room assembly assignments are unconfirmed. Follow current school staff directions during an emergency.
           </p>
-          {overview && (
-            <div className="evacuation-review-summary" role="note">
-              <strong>{overview.review.status === "verified_school_plan" && overview.routesAvailable
-                ? "School evacuation plan verified"
-                : "Awaiting a current school evacuation plan"}</strong>
-              <span>Campus map: September 3, 2026 · Last evidence review: {overview.review.checkedOn}</span>
-              <span>{overview.routesAvailable ? `Plan verified: ${overview.provenance.verifiedOn}` : "Plan verification: not completed. All room assembly areas remain unconfirmed."}</span>
-              <button className="download-link" type="button" onClick={() => infoDialog.current?.showModal()}>View source and required evidence</button>
-            </div>
-          )}
-          {overviewError && <p className="is-error" role="status">{overviewError}</p>}
-          {scheduleError && <p className="is-error" role="status">{scheduleError}</p>}
-          {reviewRequired && (
-            <p className="evacuation-schedule-review" role="status">
-              Some saved rooms need confirmation on the current campus map. Their markers are hidden until reviewed.
-              {" "}<Link to="/">Review saved rooms</Link>
-            </p>
-          )}
 
           <div className="evacuation-map-frame">
             <button
@@ -163,7 +307,7 @@ export function EvacuationPage() {
             >
               <span className="evacuation-map-art">
                 <img
-                src={siteUrl("/map.webp")}
+                  src={siteUrl("/evacuation-map.webp")}
                   alt="Gunn school site map dated September 3, 2026, without evacuation routes. Open the map to zoom and pan."
                 />
               </span>
@@ -220,9 +364,7 @@ export function EvacuationPage() {
                         {entry.building
                           ? buildingName(entry.building)
                           : "Choose a building to confirm this room"}
-                        {entry.floor !== null && ` · Floor ${entry.floor}`}
                       </small>
-                      <p className="schedule-evacuation-note">{scheduleEntryNote(entry)}</p>
                     </article>
                   );
                 })}
@@ -262,7 +404,7 @@ export function EvacuationPage() {
               <article className="panel route-group" key={key} style={style}>
                 <h3>
                   <span className="route-swatch" aria-hidden="true" />
-                  {group.title}
+                  {group.title || `${key} markings`}
                 </h3>
                 <ul>
                   {group.labels.map(label => <li key={label}>{label}</li>)}
@@ -278,20 +420,6 @@ export function EvacuationPage() {
             Reference only. Follow current school staff directions during an emergency.
           </p>
           <p>{provenance}</p>
-          {overview && (
-            <section className="evacuation-review-details" aria-labelledby="evacuation-review-title">
-              <h3 id="evacuation-review-title">School plan review</h3>
-              <p>{overview.review.note}</p>
-              <p>Last evidence review: {overview.review.checkedOn} · {overview.review.checkedBy}</p>
-              <p>Plan verification: {overview.provenance.verifiedOn ?? "not completed"}</p>
-              {overview.review.missingEvidence.length > 0 && (
-                <>
-                  <p>Evidence still required:</p>
-                  <ul>{overview.review.missingEvidence.map(item => <li key={item}>{item}</li>)}</ul>
-                </>
-              )}
-            </section>
-          )}
           <p
             className={validationClassName}
             role="status"
@@ -346,7 +474,7 @@ export function EvacuationPage() {
           <div ref={viewerArt} className="evacuation-map-art">
             <img
               ref={viewerImage}
-              src={siteUrl("/map.webp")}
+              src={siteUrl("/evacuation-map.webp")}
               alt="Gunn school site map dated September 3, 2026, without evacuation routes."
             />
             {markerEntries.length > 0 && (
@@ -359,15 +487,12 @@ export function EvacuationPage() {
                   entries={markerEntries}
                   mapSize={mapSize}
                   prefix="viewer"
-                  onSelect={setSelectedPeriod}
-                  selectedPeriod={selectedPeriod}
+                  onSelect={scrollToEntry}
                 />
               </span>
             )}
           </div>
         </div>
-        <EvacuationPeriodPicker entries={markerEntries} selectedPeriod={selectedPeriod} onSelect={setSelectedPeriod} />
-        <EvacuationRoomDetails entry={selectedEntry} hasMarkers={markerEntries.length > 0} detailsRef={selectedDetails} />
       </dialog>
     </>
   );

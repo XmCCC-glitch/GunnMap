@@ -28,11 +28,6 @@ export async function removeExpiredMap(outputDir: string, filename: string, rete
     const info = await lstat(path);
     if (!info.isFile() || now - info.mtimeMs < retentionMs) return false;
     await unlink(path);
-    // Only this image's regular metadata sidecar is eligible for deletion.
-    // Missing legacy sidecars and symbolic links are left alone.
-    const metadataPath = path + '.json';
-    try { if ((await lstat(metadataPath)).isFile()) await unlink(metadataPath); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;

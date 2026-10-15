@@ -5,9 +5,8 @@ import { join } from 'node:path';
 import vm from 'node:vm';
 import { rooms, roomData, ROOT } from '../project.js';
 import { evacuationForRoom } from '../evacuation.js';
-import { MAP_REVISION, MAP_REVISION_DATE } from '../map_revision.js';
 import { findRoomMatches } from '../domain/room-matching.js';
-import { MAP_REVISION_HEADER, GENERATED_AT_HEADER, NETWORK_GET_TIMEOUT_MS, PERSONAL_CACHE, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER, PUBLIC_CACHE_PREFIX, PUBLIC_MANIFEST_KEY, UNSAVED_IMAGE_TIMEOUT_MS } from '../../web/offline/policy.js';
+import { NETWORK_GET_TIMEOUT_MS, PERSONAL_CACHE, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER, PUBLIC_CACHE_PREFIX, PUBLIC_MANIFEST_KEY, UNSAVED_IMAGE_TIMEOUT_MS } from '../../web/offline/policy.js';
 
 const origin = 'https://gunnmap.test';
 const shell = '<!doctype html><div id="root">installed app shell</div>';
@@ -20,7 +19,7 @@ const locatedRooms = rooms.map(room => ({
   marker: [(room.label_box[0] + room.label_box[2]) / 2, (room.label_box[1] + room.label_box[3]) / 2],
   evacuation: evacuationForRoom(room),
 }));
-const directory = { rooms: locatedRooms, map_size: roomData.image_size, map_revision: MAP_REVISION, map_revision_date: MAP_REVISION_DATE };
+const directory = { rooms: locatedRooms, map_size: roomData.image_size };
 const workerCode = readFileSync(join(ROOT, 'dist', 'web', 'sw.js'), 'utf8');
 
 class BrowserRequest extends Request {
@@ -185,8 +184,6 @@ test('worker installation caches public resources and activation preserves perso
   assert.ok((await h.caches.keys()).includes(oldName), 'install must preserve the active version');
   assert.equal(h.skips, 0, 'new versions must wait for the user to activate them');
   assert.ok(h.networkRequests.some(request => new URL(request.url).pathname === '/api/offline-rooms'));
-  assert.equal(h.networkRequests.filter(request => new URL(request.url).pathname === '/map.webp').length, 1);
-  assert.ok(!h.networkRequests.some(request => new URL(request.url).pathname === '/evacuation-map.webp'));
   for (const request of h.networkRequests) {
     assert.equal(request.method, 'GET');
     assert.equal(request.credentials, 'omit');
@@ -205,23 +202,6 @@ test('worker installation caches public resources and activation preserves perso
   assert.deepEqual(await (await publicCache.match('/api/offline-rooms'))?.json(), directory);
   await h.lifecycle('message', { type: 'ACTIVATE_UPDATE' });
   assert.equal(h.skips, 1);
-});
-
-test('offline image HEAD retains the saved image revision and date without downloading another image', async () => {
-  const h = await installedWorker();
-  const revision = 'd'.repeat(64);
-  await (await h.caches.open(PERSONAL_CACHE)).put(PERSONAL_IMAGE_KEY, new Response(png, {headers: {
-    'Content-Type': 'image/png', [PERSONAL_SOURCE_HEADER]: imagePath,
-    [MAP_REVISION_HEADER]: revision, [GENERATED_AT_HEADER]: '2026-09-27T12:00:00.000Z',
-  }}));
-  h.offline();
-  const before = h.networkRequests.length;
-  const response = await h.fetch(imagePath, {method: 'HEAD'});
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get(MAP_REVISION_HEADER), revision);
-  assert.equal(response.headers.get(GENERATED_AT_HEADER), '2026-09-27T12:00:00.000Z');
-  assert.equal(await response.text(), '');
-  assert.equal(h.networkRequests.length, before);
 });
 
 test('a failed precache leaves the previous worker resources available', async () => {
@@ -255,8 +235,7 @@ test('offline navigation, public assets and room lookup preserve geometry and ev
     assert.equal(response.headers.get('X-GunnMap-Offline'), '1');
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
     const result = await response.json();
-    assert.deepEqual(result, { rooms: findRoomMatches(locatedRooms, query), map_size: roomData.image_size,
-      map_revision: MAP_REVISION, map_revision_date: MAP_REVISION_DATE });
+    assert.deepEqual(result, { rooms: findRoomMatches(locatedRooms, query), map_size: roomData.image_size });
     if (query === 'n—214') {
       assert.equal(result.rooms[0].id, 'R148');
       assert.equal(result.rooms[0].floor, 2);
@@ -391,8 +370,7 @@ test('upgrades reuse unchanged maps and scripts but download changed resources a
   await h.lifecycle('activate');
   const cache = await h.publicCache();
   assert.equal(await (await cache.match('/map.webp'))?.text(), 'compressed map');
-  assert.equal(await cache.match('/evacuation-map.webp'), undefined, 'the alias must not duplicate the cached map');
-  assert.equal(await (await h.fetch('/evacuation-map.webp')).text(), 'compressed map');
+  assert.equal(await (await cache.match('/evacuation-map.webp'))?.text(), 'compressed map');
   assert.deepEqual(await (await cache.match('/api/offline-rooms'))?.json(), directory);
   assert.notEqual(await (await cache.match('/main.js'))?.text(), 'old script');
   assert.ok(await cache.match(PUBLIC_MANIFEST_KEY), 'only a completed release gets reuse metadata');

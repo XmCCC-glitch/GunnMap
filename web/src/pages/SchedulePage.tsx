@@ -1,203 +1,449 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadRoomDirectory } from "../features/rooms/room-api.js";
-import type { RoomData } from "../features/rooms/types.js";
+import type { FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { PeriodEditor } from "../features/schedule/PeriodEditor.js";
-import type { ResponsivePeriod } from "../features/schedule/PeriodEditor.js";
-import { GeneratedMapPanel, savedImagePath } from "./GeneratedMapPage.js";
-import { ScheduleActions } from "../features/schedule/ScheduleActions.js";
-import { SharedScheduleDialog } from "../features/schedule/SharedScheduleDialog.js";
-import { ScheduleReviewNotice } from "../features/schedule/ScheduleReviewNotice.js";
-import { useScheduleEditor } from "../features/schedule/useScheduleEditor.js";
-import { useScheduleRender } from "../features/schedule/useScheduleRender.js";
 import {
-  flushPendingDraft,
+  EXAMPLE_SCHEDULE,
+  GENERATED_MAP_SESSION_KEY,
+  PERIOD_COLORS,
+  clearDraft,
+  defaultPeriods,
+  loadDraft,
+  loadTemplates,
   readSharedSchedule,
   removeSharedSchedule,
-  serializeSchedule,
+  saveCurrentSchedule,
+  saveDraft,
+  queueDraft,
+  flushPendingDraft,
+  saveTemplates,
+  loadSharedPreview,
+  saveSharedPreview,
 } from "../features/schedule/schedule-storage.js";
-import type { Period } from "../features/schedule/types.js";
-import { useToast } from "../shared/toast.js";
+import type { Period, ScheduleTemplate } from "../features/schedule/types.js";
+import type { RoomOption } from "../features/rooms/types.js";
+import { buildingName } from "../features/rooms/room-display.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
-import { isPages } from "../features/pages/site-data.js";
-import {
-  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, isNoClassDate, loadSavedCampusPeriods, mapFromCampus,
-  needsFridayStudyHall, needsWednesdayPrime, numericCandidates, parseCampusPeriods, placementsForDate,
-  responsiveColor, responsivePlacements, saveCampusPeriods, schoolDate, visibleNumericPeriods,
-} from "../features/schedule/campus-sync.js";
-import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
-import { CampusSignIn } from "../features/schedule/CampusSignIn.js";
+import { periodRoomState } from "../features/schedule/room-validation.js";
+import type { CSSVariables } from "../shared/css-types.js";
+import { useToast } from "../shared/toast.js";
+import { isPages, loadRooms } from "../features/pages/site-data.js";
 
-const EMPTY_ROOMS: RoomData["rooms"] = [];
-const EMPTY_BUILDINGS: string[] = [];
+interface ActiveRender {
+  revision: number;
+  promise: Promise<boolean>;
+}
+interface ScheduleSnapshot {
+  periods: Period[];
+  sharedPreview: boolean;
+  draft: Period[] | null;
+  templates: ScheduleTemplate[];
+  selectedTemplate: string;
+}
+
+function clonePeriods(periods: Period[]) {
+  return periods.map(period => ({ ...period }));
+}
+
+function removeGeneratedMap() {
+  try {
+    window.sessionStorage.removeItem(GENERATED_MAP_SESSION_KEY);
+  } catch {
+    // Keep editing available when session storage is disabled.
+  }
+}
 
 export function SchedulePage() {
+  const navigate = useNavigate();
   const showToast = useToast();
-  const [directory, setDirectory] = useState<RoomData | null>(null);
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
+  const [buildings, setBuildings] = useState<string[]>([]);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
+  const [periods, setPeriods] = useState<Period[]>(() => loadSharedPreview() ?? loadDraft() ?? defaultPeriods());
+  const [sharedPreview, setSharedPreview] = useState(() => Boolean(loadSharedPreview()));
+  const [validationMessage, setValidationMessage] = useState("");
+  const [templates, setTemplates] = useState<ScheduleTemplate[]>(() => loadTemplates());
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [rendering, setRendering] = useState(false);
   const [sharedPeriods, setSharedPeriods] = useState<Period[] | null>(null);
-  const [savedCampus] = useState(() => isPages ? loadSavedCampusPeriods() : null);
-  const [campusData, setCampusData] = useState<CampusPeriods | null>(savedCampus);
-  const [campusStatus, setCampusStatus] = useState(!isPages ? "Checking local connector…"
-    : savedCampus ? "Saved schedule" : "Sign in with ClassLink to load your Campus schedule.");
-  const [campusDate, setCampusDate] = useState(schoolDate);
-  const [campusUpdatedAt, setCampusUpdatedAt] = useState(savedCampus?.as_of ?? "");
-  const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
-  const [generatedImage, setGeneratedImage] = useState(savedImagePath);
-  const campusSignInController = useRef<AbortController | null>(null);
+  const [templateName, setTemplateName] = useState("");
+  const [templateMessage, setTemplateMessage] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const [pendingDeleteName, setPendingDeleteName] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [undoHistory, setUndoHistory] = useState<ScheduleSnapshot[]>([]);
+  const [redoHistory, setRedoHistory] = useState<ScheduleSnapshot[]>([]);
+  const revision = useRef(0);
+  const activeRender = useRef<ActiveRender | null>(null);
+  const lastInputUndoAt = useRef(-Infinity);
   const editorForm = useRef<HTMLFormElement>(null);
-  const generatedMap = useRef<HTMLDivElement>(null);
-  const render = useScheduleRender(showToast);
-  const invalidateGenerated = useCallback(() => {
-    render.invalidate();
-    setGeneratedImage("");
-  }, [render.invalidate]);
-  const editor = useScheduleEditor(directory, invalidateGenerated, showToast);
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
-  const roomsLoaded = directory !== null;
-  const rooms = directory?.rooms ?? EMPTY_ROOMS;
-  const buildings = directory?.buildings ?? EMPTY_BUILDINGS;
-  const requiresReview = editor.review.length > 0;
-  const noClassToday = Boolean(campusData && !editor.sharedPreview && isNoClassDate(campusData.calendar, campusDate));
-  const visibleNumbers = noClassToday ? [] : campusData && !editor.sharedPreview
-    ? visibleNumericPeriods(campusDate) : [1, 2, 3, 4, 5, 6, 7];
-  const campusRows = campusData && !noClassToday ? placementsForDate(campusData, campusDate) : [];
+  const templateDialog = useRef<HTMLDialogElement>(null);
+  const deleteDialog = useRef<HTMLDialogElement>(null);
+  const sharedDialog = useRef<HTMLDialogElement>(null);
+  const pendingDelete = useRef("");
 
+  const invalidatePreview = useCallback(() => {
+    revision.current += 1;
+    setRendering(false);
+    removeGeneratedMap();
+  }, []);
+  useEffect(() => () => { revision.current += 1; }, []);
   useEffect(() => {
-    if (isPages) return;
-    let active = true;
-    let pending = false;
-    async function update() {
-      if (pending) return;
-      pending = true;
-      try {
-        const result = await fetchCampusPeriods();
-        if (!active) return;
-        setCampusData(result);
-        setCampusStatus("Connected");
-        setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-      } catch (error) {
-        if (!active) return;
-        setCampusStatus(error instanceof TypeError
-          ? "Local connector unavailable. Start it to sync your schedule."
-          : error instanceof Error ? error.message : "Campus sync failed.");
-      } finally { pending = false; }
-    }
-    const focused = () => { void update(); };
-    const visible = () => { if (document.visibilityState === "visible") void update(); };
-    void update();
-    window.addEventListener("focus", focused);
-    document.addEventListener("visibilitychange", visible);
+    const flush = () => { flushPendingDraft(); };
+    const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
     return () => {
-      active = false;
-      window.removeEventListener("focus", focused);
-      document.removeEventListener("visibilitychange", visible);
+      flush();
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
     };
   }, []);
 
-  useEffect(() => {
-    if (!campusData || !directory || editorRef.current.sharedPreview) return;
-    if (isNoClassDate(campusData.calendar, campusDate)) {
-      setResponsivePeriods([]);
-      invalidateGenerated();
-      return;
-    }
-    const rows = placementsForDate(campusData, campusDate);
-    const imported = mapFromCampus(editorRef.current.periods, rows);
-    if (JSON.stringify(imported) !== JSON.stringify(editorRef.current.periods)) {
-      editorRef.current.syncCampus(imported);
-    }
-    const responsive: ResponsivePeriod[] = responsivePlacements(rows).map(row => {
-      const room = row.room?.trim() ?? "";
-      const matches = findRoomMatches(directory.rooms, room);
+  const writeSchedule = useCallback((
+    next: Period[],
+    { preview = sharedPreview, persistDraft = !preview, clearShare = true }: { preview?: boolean; persistDraft?: boolean; clearShare?: boolean } = {},
+  ) => {
+    flushPendingDraft();
+    const normalized = PERIOD_COLORS.map((fallbackColor, index) => {
+      const period = next[index];
+      let building = period?.building && buildings.includes(period.building)
+        ? period.building
+        : "";
+      if (!building && period?.room) {
+        const candidates = [...new Set(findRoomMatches(rooms, period.room).map(room => room.building))];
+        if (candidates.length === 1) building = candidates[0];
+      }
+      const color = period && /^#[0-9a-f]{6}$/i.test(period.color)
+        ? period.color
+        : fallbackColor;
+
       return {
-        name: row.period?.trim() || "Study Hall", course: row.course || "Selected session",
-        startTime: row.start_time, endTime: row.end_time,
-        room, building: matches.length === 1 ? matches[0].building : "",
-        color: responsiveColor(row.period),
+        building,
+        room: period?.room ?? "",
+        color,
       };
     });
-    if (needsFridayStudyHall(campusDate, rows)) responsive.push({
-      name: "Study Hall", course: "", startTime: null, endTime: null,
-      room: "", building: "", color: responsiveColor("Study Hall"), placeholder: true,
-    });
-    if (needsWednesdayPrime(campusDate, rows)) responsive.push({
-      name: "PRIME", course: "", startTime: null, endTime: null,
-      room: "", building: "", color: responsiveColor("PRIME"), placeholder: true,
-    });
-    setResponsivePeriods(responsive);
-    invalidateGenerated();
-  }, [campusData, campusDate, directory, editor.sharedPreview, invalidateGenerated]);
+
+    setPeriods(normalized);
+    saveCurrentSchedule(normalized);
+    const saved = !persistDraft || saveDraft(normalized);
+    if (!saved) {
+      showToast("Draft could not be saved in this browser.");
+    }
+    const stayInPreview = preview || (!saved && sharedPreview);
+    setSharedPreview(stayInPreview);
+    saveSharedPreview(stayInPreview ? normalized : null);
+    setValidationMessage("");
+    if (clearShare) removeSharedSchedule();
+    invalidatePreview();
+    return saved;
+  }, [buildings, rooms, sharedPreview, invalidatePreview, showToast]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadRoomDirectory(controller.signal).then(data => {
-      if (controller.signal.aborted) return;
-      setDirectory(data);
-      setSharedPeriods(readSharedSchedule());
-    }).catch(error => {
-      if (!controller.signal.aborted) showToast(error instanceof Error ? error.message : String(error));
-    });
-    return () => controller.abort();
+    let current = true;
+    void loadRooms()
+      .then(data => {
+        if (!current) return;
+        setRooms(data.rooms);
+        setBuildings(data.buildings);
+        setPeriods(existing => {
+          const inferred = existing.map(period => {
+            if (period.building) return period;
+            const matches = findRoomMatches(data.rooms, period.room);
+            const candidates = [...new Set(matches.map(room => room.building))];
+            return candidates.length === 1
+              ? { ...period, building: candidates[0] }
+              : period;
+          });
+          saveCurrentSchedule(inferred);
+          return inferred;
+        });
+        setRoomsLoaded(true);
+
+        const shared = readSharedSchedule();
+        if (shared) {
+          setSharedPeriods(shared);
+          sharedDialog.current?.showModal();
+        }
+      })
+      .catch(error => {
+        if (!current) return;
+        const message = error instanceof Error
+          ? error.message
+          : "Room list unavailable.";
+        showToast(message);
+      });
+
+    return () => {
+      current = false;
+    };
   }, [showToast]);
 
-  function dismissShare() {
-    setSharedPeriods(null);
-    removeSharedSchedule();
-  }
+  const snapshot = useCallback((previous = periods): ScheduleSnapshot => ({
+    periods: clonePeriods(previous), sharedPreview, draft: loadDraft(),
+    templates: templates.map(template => ({ name: template.name, periods: clonePeriods(template.periods) })),
+    selectedTemplate,
+  }), [periods, sharedPreview, templates, selectedTemplate]);
 
-  async function share() {
+  const recordUndo = useCallback((previous: Period[]) => {
+    setUndoHistory(history => [...history.slice(-19), snapshot(previous)]);
+    setRedoHistory([]);
+    lastInputUndoAt.current = -Infinity;
+  }, [snapshot]);
+
+  const handleEdit = useCallback((next: Period[], previous: Period[]) => {
+    const now = performance.now();
+    if (now - lastInputUndoAt.current > 700) {
+      setUndoHistory(history => [...history.slice(-19), snapshot(previous)]);
+    }
+    lastInputUndoAt.current = now;
+    setRedoHistory([]);
+    setPeriods(next);
+    saveCurrentSchedule(next);
+    if (!sharedPreview) queueDraft(next, () => showToast("Draft could not be saved in this browser."));
+    saveSharedPreview(sharedPreview ? next : null);
+    setValidationMessage("");
+    invalidatePreview();
+    removeSharedSchedule();
+  }, [sharedPreview, snapshot, invalidatePreview, showToast]);
+
+  const restoreSnapshot = (entry: ScheduleSnapshot) => {
+    writeSchedule(entry.periods, { persistDraft: false, preview: entry.sharedPreview });
+    const draftSaved = entry.draft ? saveDraft(entry.draft) : clearDraft();
+    const templatesSaved = JSON.stringify(templates) === JSON.stringify(entry.templates) || saveTemplates(entry.templates);
+    setTemplates(entry.templates);
+    setSelectedTemplate(entry.selectedTemplate);
+    lastInputUndoAt.current = -Infinity;
+    return draftSaved && templatesSaved;
+  };
+
+  const undo = () => {
+    const previous = undoHistory.at(-1);
+    if (!previous) return;
+    setUndoHistory(undoHistory.slice(0, -1));
+    setRedoHistory([...redoHistory, snapshot()]);
+    showToast(restoreSnapshot(previous) ? "Last change undone." : "Change undone in the editor, but browser storage could not be updated.");
+  };
+
+  const redo = () => {
+    const next = redoHistory.at(-1);
+    if (!next) return;
+    setRedoHistory(redoHistory.slice(0, -1));
+    setUndoHistory([...undoHistory, snapshot()]);
+    showToast(restoreSnapshot(next) ? "Change restored." : "Change restored in the editor, but browser storage could not be updated.");
+  };
+
+  const useShared = (save: boolean) => {
+    if (!sharedPeriods) return;
+    recordUndo(periods);
+    // Enter preview first so a failed Save and use never falls back to autosave.
+    if (save && !saveDraft(sharedPeriods)) {
+      writeSchedule(sharedPeriods, { persistDraft: false, preview: true });
+      showToast("Shared schedule opened as a preview. It could not be saved on this device.");
+    } else {
+      writeSchedule(sharedPeriods, { persistDraft: false, preview: !save });
+      showToast(save ? "Shared schedule saved on this device." : "Shared schedule loaded for this session. Your device draft is unchanged.");
+    }
+    setSharedPeriods(null);
+    sharedDialog.current?.close();
+  };
+
+  const savePreviewToDevice = () => {
+    recordUndo(periods);
+    if (writeSchedule(periods, { preview: false, persistDraft: true })) {
+      showToast("Shared schedule saved on this device.");
+    }
+  };
+
+  const returnToLocalDraft = () => {
+    recordUndo(periods);
+    writeSchedule(loadDraft() ?? defaultPeriods(), { preview: false, persistDraft: false });
+    showToast("Your device draft is back in the editor.");
+  };
+
+  const share = async () => {
     flushPendingDraft();
-    const encoded = encodeURIComponent(serializeSchedule(editor.periods));
-    window.history.replaceState(null, "", `${window.location.origin}${isPages ? import.meta.env.BASE_URL : "/"}#schedule=${encoded}`);
+    setMoreOpen(false);
+    const encoded = encodeURIComponent(JSON.stringify(periods));
+    const shareUrl = `${window.location.origin}${isPages ? import.meta.env.BASE_URL : "/"}#schedule=${encoded}`;
+    window.history.replaceState(null, "", shareUrl);
     try {
       await navigator.clipboard.writeText(window.location.href);
       showToast("Share link copied.");
     } catch {
       showToast("Share link ready in the address bar.");
     }
-  }
+  };
 
-  function chooseCampusCourse(number: number, row: CampusPlacement) {
-    const next = editor.periods.map(period => ({ ...period }));
-    next[number - 1] = { ...next[number - 1], room: row.room?.trim() ?? "", building: "" };
-    editor.syncCampus(next);
-  }
-
-  function downloadCampusJson() {
-    if (!campusData) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(campusData, null, 2)], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `infinite-campus-periods-${campusData.term}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function keepPagesCampus(data: CampusPeriods | null, status: string) {
-    if (!data) {
-      setResponsivePeriods([]);
-      invalidateGenerated();
+  const saveTemplate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    flushPendingDraft();
+    const name = templateName.trim().slice(0, 60);
+    if (!name) {
+      setTemplateMessage("Enter a name for this schedule.");
+      return;
     }
-    const saved = saveCampusPeriods(data);
-    setCampusData(data);
-    setCampusStatus(saved ? status : data
-      ? `${status} for this page only. Browser storage is unavailable; the schedule may disappear on reload.`
-      : "Campus schedule removed for this page, but browser storage could not be cleared. It may return on reload.");
-    setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-  }
 
-  async function importCampusJson(file: File | undefined) {
-    if (!file) return;
-    campusSignInController.current?.abort();
-    try {
-      if (file.size > 1_000_000) throw new Error("Period JSON file is too large (1 MB maximum).");
-      const data = parseCampusPeriods(JSON.parse(await file.text()) as unknown);
-      keepPagesCampus(data, `Imported period JSON (as of ${data.as_of})`);
-    } catch (error) {
-      setCampusStatus(error instanceof SyntaxError ? "This file is not valid JSON."
-        : error instanceof Error ? error.message : "Could not import period JSON.");
+    const next = [
+      { name, periods: clonePeriods(periods) },
+      ...templates.filter(item => item.name !== name),
+    ].slice(0, 8);
+    if (!saveTemplates(next)) {
+      setTemplateMessage(
+        "Template could not be saved in this browser. Browser storage may be disabled or full.",
+      );
+      return;
     }
-  }
+    recordUndo(periods);
+    setTemplates(next);
+    setSelectedTemplate(name);
+    templateDialog.current?.close();
+    showToast(`${name} saved.`);
+  };
+
+  const loadTemplate = (name: string) => {
+    setSelectedTemplate(name);
+    if (!name) return;
+    setMoreOpen(false);
+    const template = templates.find(item => item.name === name);
+    if (!template) return;
+    recordUndo(periods);
+    writeSchedule(template.periods);
+    showToast(`${name} loaded.`);
+  };
+
+  const deleteTemplate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = pendingDelete.current;
+    const next = templates.filter(item => item.name !== name);
+    if (!saveTemplates(next)) {
+      setDeleteMessage("Template could not be deleted in this browser.");
+      return;
+    }
+    recordUndo(periods);
+    setTemplates(next);
+    setSelectedTemplate("");
+    deleteDialog.current?.close();
+    showToast(`${name} deleted.`);
+  };
+
+  const openTemplateDialog = () => {
+    setMoreOpen(false);
+    setTemplateName(`Schedule ${templates.length + 1}`);
+    setTemplateMessage("");
+    templateDialog.current?.showModal();
+  };
+
+  const openDeleteDialog = () => {
+    pendingDelete.current = selectedTemplate;
+    setPendingDeleteName(selectedTemplate);
+    setDeleteMessage("");
+    deleteDialog.current?.showModal();
+  };
+
+  const loadExample = () => {
+    setMoreOpen(false);
+    recordUndo(periods);
+    const example = EXAMPLE_SCHEDULE.map(({ building, room }, index) => ({
+      building,
+      room,
+      color: PERIOD_COLORS[index],
+    }));
+    writeSchedule(example);
+    showToast("Example loaded. Select Generate Map to preview it.");
+  };
+
+  const clearSchedule = () => {
+    setMoreOpen(false);
+    recordUndo(periods);
+    writeSchedule(defaultPeriods(), { persistDraft: false });
+    const cleared = sharedPreview || clearDraft();
+    showToast(cleared
+      ? (sharedPreview ? "Preview cleared. Your device draft is unchanged." : "Schedule cleared.")
+      : "Schedule cleared, but the saved draft could not be removed.");
+  };
+
+  const closeSharedPreview = () => {
+    setSharedPeriods(null);
+    removeSharedSchedule();
+    sharedDialog.current?.close();
+  };
+
+  const generateMap = async () => {
+    flushPendingDraft();
+    if (!roomsLoaded) return;
+    if (activeRender.current?.revision === revision.current) {
+      return activeRender.current.promise;
+    }
+    invalidatePreview();
+    const invalid = periods.map((period, index) => ({ index, ...periodRoomState(period, rooms) })).filter(item => item.invalid);
+    if (invalid.length) {
+      setValidationMessage(`Check period${invalid.length === 1 ? "" : "s"} ${invalid.map(item => item.index + 1).join(", ")}. Choose a recognized room before generating.`);
+      const input = editorForm.current?.querySelector<HTMLInputElement>(`#period-${invalid[0].index + 1}-room`);
+      input?.focus();
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+    setValidationMessage("");
+    setRendering(true);
+    const requestRevision = revision.current;
+    const request: ActiveRender = {
+      revision: requestRevision,
+      promise: (async () => {
+        try {
+          const imageUrl = isPages ? await import("../features/pages/render-map.js").then(module => module.renderPagesMap(periods)) : await (async () => {
+            const response = await fetch("/api/render", {
+              method: "POST",
+              credentials: "omit",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ periods: periods.map(period => ({
+                ...period,
+                room: period.room.trim(),
+                building: period.room.trim() ? findRoomMatches(rooms, period.room, period.building)[0].building : "",
+              })) }),
+            });
+            const result = await response.json() as {
+              image_url?: string;
+              error?: string;
+            };
+            if (!response.ok || !result.image_url) throw new Error(result.error ?? "Map generation failed.");
+            return result.image_url;
+          })();
+          if (requestRevision !== revision.current) return false;
+          const image = new Image();
+          image.src = imageUrl;
+          await image.decode();
+          if (requestRevision !== revision.current) return false;
+          if (isPages && imageUrl.length >= 8_000_000) throw new Error("The generated map is too large for this browser. Try fewer rooms.");
+          try {
+            sessionStorage.setItem(GENERATED_MAP_SESSION_KEY, imageUrl);
+          } catch {
+            if (isPages) throw new Error("Browser session storage is unavailable. Enable it to view the generated map.");
+            // Server-generated image URLs remain shareable without session storage.
+          }
+          navigate(isPages ? "/generate-map" : `/generate-map?image=${encodeURIComponent(imageUrl)}`);
+          return true;
+        } catch (error) {
+          if (requestRevision === revision.current) {
+            const message = error instanceof Error ? error.message : String(error);
+            showToast(message);
+          }
+          return false;
+        }
+      })().finally(() => {
+        if (activeRender.current === request) {
+          activeRender.current = null;
+          setRendering(false);
+        }
+      }),
+    };
+    activeRender.current = request;
+    return request.promise;
+  };
+
+  const shared = sharedPeriods ?? [];
 
   return (
     <>
@@ -213,169 +459,266 @@ export function SchedulePage() {
               <div className="eyebrow">YOUR SCHEDULE</div>
               <h2 id="editor-title">Your schedule</h2>
             </div>
-            <ScheduleActions
-              roomsLoaded={roomsLoaded}
-              canUndo={editor.canUndo}
-              canRedo={editor.canRedo}
-              onUndo={editor.undo}
-              onRedo={editor.redo}
-              onShare={share}
-              onExample={editor.loadExample}
-              onClear={editor.clearSchedule}
-              templates={editor.templates}
-              selected={editor.selectedTemplate}
-              onLoad={editor.loadTemplate}
-              onSave={editor.saveTemplate}
-              onDelete={editor.deleteTemplate}
-            />
-          </div>
-          <section className="campus-sync" aria-labelledby="campus-sync-title">
-            <div className="campus-sync-heading">
-              <div>
-                <h3 id="campus-sync-title">Infinite Campus</h3>
-                <p role="status">{campusStatus}{campusData ? ` · ${campusData.term} · updated ${campusUpdatedAt}` : ""}</p>
-              </div>
-              {!isPages && <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
-                Connect Infinite Campus
-              </button>}
-            </div>
-            {isPages && <>
-              <CampusSignIn controller={campusSignInController} onSynced={data => keepPagesCampus(data, "Connected")} />
-              {campusData && <button type="button" className="download-link campus-forget"
-                onClick={() => {
-                  campusSignInController.current?.abort();
-                  keepPagesCampus(null, "Saved Campus schedule removed from this browser.");
-                }}>
-                Forget saved Campus schedule
-              </button>}
-              <details className="campus-file-import">
-                <summary>Import period JSON instead</summary>
-                <label htmlFor="campus-period-file">Period JSON file</label>
-                <input id="campus-period-file" type="file" accept=".json,application/json" onChange={event => {
-                  void importCampusJson(event.currentTarget.files?.[0]);
-                  event.currentTarget.value = "";
-                }} />
-                <p className="campus-sync-note">Use a period JSON file downloaded from GunnMap with the local connector. The file stays in this browser.</p>
+            <div className="panel-actions">
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Undo"
+                disabled={!undoHistory.length || !roomsLoaded}
+                onClick={undo}
+              >
+                <span className="action-icon icon-undo" aria-hidden="true" />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Redo"
+                disabled={!redoHistory.length || !roomsLoaded}
+                onClick={redo}
+              >
+                <span className="action-icon icon-redo" aria-hidden="true" />
+              </button>
+              <details
+                className="editor-more"
+                open={moreOpen}
+                onToggle={event => setMoreOpen(
+                  (event.currentTarget as HTMLDetailsElement).open,
+                )}
+              >
+                <summary>More</summary>
+                <div className="more-actions">
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => void share()}
+                  >
+                    Share Link
+                  </button>
+                  <details
+                    className="editor-options"
+                    open={savedOpen}
+                    onToggle={event => setSavedOpen(
+                      (event.currentTarget as HTMLDetailsElement).open,
+                    )}
+                  >
+                    <summary>Saved schedules</summary>
+                    <div className="template-controls">
+                      <label htmlFor="template-select">
+                        Choose a saved schedule
+                      </label>
+                      <select
+                        id="template-select"
+                        aria-label="Saved schedules"
+                        value={selectedTemplate}
+                        onChange={event => loadTemplate(event.currentTarget.value)}
+                      >
+                        <option value="">Choose a saved schedule</option>
+                        {templates.map(template => (
+                          <option value={template.name} key={template.name}>
+                            {template.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={openTemplateDialog}
+                      >
+                        Save current
+                      </button>
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={!selectedTemplate}
+                        onClick={openDeleteDialog}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </details>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={loadExample}
+                  >
+                    Load Example
+                  </button>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={clearSchedule}
+                  >
+                    Clear Schedule
+                  </button>
+                </div>
               </details>
-            </>}
-            {campusData && <>
-              <div className="campus-sync-controls">
-                <label htmlFor="campus-date">Schedule date</label>
-                <input id="campus-date" type="date" value={campusDate} onChange={event => setCampusDate(event.currentTarget.value)} />
-                <a className="download-link" href={CAMPUS_RESPONSIVE_URL} target="_blank" rel="noopener noreferrer">Open Responsive Schedule ↗</a>
-              </div>
-              {!campusData.calendar && <p className="campus-sync-note">School calendar unavailable; weekday breaks may not be detected.</p>}
-              {editor.sharedPreview && <p className="campus-sync-note">Campus data is loaded. The shared preview stays in place until you leave preview mode.</p>}
-              {!noClassToday && [1, 2, 3, 4, 5, 6, 7].map(number => {
-                if (!visibleNumbers.includes(number)) return null;
-                const choices = numericCandidates(campusRows, number);
-                return choices.length > 1 ? <label className="campus-course-choice" key={number}>
-                  <span>Period {number} has multiple active courses. Choose one:</span>
-                  <select value={(() => {
-                    const index = choices.findIndex(row => row.room?.trim() === editor.periods[number - 1].room.trim());
-                    return index < 0 ? "" : String(index);
-                  })()} onChange={event => {
-                    const row = choices[Number(event.currentTarget.value)];
-                    if (row) chooseCampusCourse(number, row);
-                  }}>
-                    <option value="">Choose a course</option>
-                    {choices.map((row, index) => <option key={`${row.course_number}-${row.section}-${index}`} value={index}>{row.course} · {row.room || "no room"}</option>)}
-                  </select>
-                </label> : null;
-              })}
-            </>}
-          </section>
-          {requiresReview && !noClassToday && (
-            <ScheduleReviewNotice review={editor.review} onConfirm={editor.confirmRooms} />
-          )}
-          {editor.sharedPreview && (
+            </div>
+          </div>
+          {sharedPreview && (
             <div className="shared-preview-banner" role="region" aria-label="Shared schedule preview">
               <p>Your shared schedule is a temporary preview. Editing it keeps your device draft unchanged.</p>
               <div className="shared-schedule-actions">
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={editor.savePreviewToDevice}
-                  disabled={!roomsLoaded || requiresReview}
-                >
-                  Save to this device
-                </button>
-                <button
-                  type="button"
-                  className="download-link"
-                  onClick={editor.returnToLocalDraft}
-                  disabled={!roomsLoaded}
-                >
-                  Return to my draft
-                </button>
+                <button type="button" className="primary-button" onClick={savePreviewToDevice} disabled={!roomsLoaded}>Save to this device</button>
+                <button type="button" className="download-link" onClick={returnToLocalDraft} disabled={!roomsLoaded}>Return to my draft</button>
               </div>
             </div>
           )}
           <form
             ref={editorForm}
-            aria-busy={!roomsLoaded}
             onSubmit={event => {
               event.preventDefault();
-              if (roomsLoaded && !noClassToday) void render.generate(editor.periods, rooms, requiresReview, editorForm.current, {
-                visibleNumbers,
-                mapRevision: directory?.map_revision,
-                extras: campusData && !editor.sharedPreview ? responsivePeriods : [],
-                onGenerated: imageUrl => {
-                  setGeneratedImage(imageUrl);
-                  window.requestAnimationFrame(() => generatedMap.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-                },
-              });
+              void generateMap();
             }}
+            aria-busy={!roomsLoaded}
           >
-            {noClassToday ? <div className="no-class-day" role="status">
-              <h3>No Class Today, Enjoy your break!</h3>
-            </div> : <>
             <PeriodEditor
-              periods={editor.periods}
+              periods={periods}
               rooms={rooms}
               buildings={buildings}
               disabled={!roomsLoaded}
-              campusRows={campusRows}
-              responsivePeriods={campusData && !editor.sharedPreview ? responsivePeriods : []}
-              onResponsiveChange={(index, next) => {
-                setResponsivePeriods(existing => existing.map((period, current) => current === index ? next : period));
-                invalidateGenerated();
-              }}
-              visibleNumbers={visibleNumbers}
-              onChange={editor.edit}
+              onChange={handleEdit}
             />
             <div className="form-actions">
-              <p className="schedule-validation-message" role="alert">{render.validationMessage}</p>
+              <p className="schedule-validation-message" role="alert">{validationMessage}</p>
               <button
                 className="primary-button"
                 type="submit"
-                disabled={!roomsLoaded || render.rendering || requiresReview}
+                disabled={!roomsLoaded || rendering}
               >
-                {render.rendering ? "Generating…" : "Generate Map"}
+                {rendering ? "Generating…" : "Generate Map"}
                 <span aria-hidden="true">→</span>
               </button>
             </div>
-            </>}
-            {campusData && <div className="campus-json-action">
-              <button type="button" className="download-link" onClick={downloadCampusJson}>Download period JSON</button>
-            </div>}
           </form>
         </section>
-        {generatedImage && <div ref={generatedMap} className="generated-map-result">
-          <GeneratedMapPanel requestedImage={generatedImage} embedded />
-        </div>}
       </main>
-      {sharedPeriods && (
-        <SharedScheduleDialog
-          periods={sharedPeriods}
-          rooms={rooms}
-          onUse={save => {
-            editor.useShared(sharedPeriods, save);
-            dismissShare();
-          }}
-          onDismiss={dismissShare}
-        />
-      )}
+
+      <dialog
+        ref={sharedDialog}
+        className="room-dialog shared-schedule-dialog"
+        aria-labelledby="shared-schedule-title"
+        onClose={() => { setSharedPeriods(null); removeSharedSchedule(); }}
+      >
+        <div className="panel-heading">
+          <div>
+            <div className="eyebrow">SHARED SCHEDULE</div>
+            <h2 id="shared-schedule-title">Preview this schedule</h2>
+          </div>
+          <form method="dialog">
+            <button
+              className="dialog-close"
+              aria-label="Close shared schedule preview"
+            >
+              ×
+            </button>
+          </form>
+        </div>
+        <p className="map-help">
+          Your saved schedule stays untouched until you choose to save this one.
+        </p>
+        <ol className="shared-schedule-preview">
+          {shared.map((period, index) => {
+            const matches = findRoomMatches(rooms, period.room, period.building);
+            const building = period.building || (matches.length === 1 ? matches[0].building : "");
+            const roomLabel = period.room.trim()
+              ? `${period.room.trim()}${building ? ` · ${buildingName(building)}` : ""}`
+              : "No room selected";
+
+            return (
+              <li key={index}>
+                <span
+                  className="shared-period-swatch"
+                  style={{ "--period-color": period.color } as CSSVariables}
+                  aria-hidden="true"
+                />
+                <span className="shared-period-number">{index + 1}</span>
+                <span>{roomLabel}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="shared-schedule-actions">
+          <button
+            className="download-link"
+            type="button"
+            onClick={() => useShared(false)}
+          >
+            Use once
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => useShared(true)}
+          >
+            Save and use
+          </button>
+          <button
+            className="text-button"
+            type="button"
+            onClick={closeSharedPreview}
+          >
+            Keep my current schedule
+          </button>
+        </div>
+      </dialog>
+      <dialog
+        ref={templateDialog}
+        className="room-dialog template-dialog"
+        aria-labelledby="template-dialog-title"
+      >
+        <h2 id="template-dialog-title">Save Schedule Template</h2>
+        <form onSubmit={saveTemplate}>
+          <label className="field template-name-field" htmlFor="template-name">
+            <span>Template name</span>
+            <input
+              id="template-name"
+              type="text"
+              maxLength={60}
+              required
+              autoComplete="off"
+              value={templateName}
+              onChange={event => setTemplateName(event.currentTarget.value)}
+            />
+          </label>
+          <p className="warning" role="alert">{templateMessage}</p>
+          <div className="form-actions">
+            <button className="primary-button" type="submit">
+              Save Template
+            </button>
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => templateDialog.current?.close()}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+      <dialog
+        ref={deleteDialog}
+        className="room-dialog template-dialog"
+        aria-labelledby="delete-template-title"
+      >
+        <h2 id="delete-template-title">Delete Template</h2>
+        <p className="map-help">
+          Delete the “{pendingDeleteName}” template? Your current schedule will
+          stay in the editor.
+        </p>
+        <p className="warning" role="alert">{deleteMessage}</p>
+        <form className="form-actions" onSubmit={deleteTemplate}>
+          <button className="primary-button" type="submit">
+            Delete Template
+          </button>
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => deleteDialog.current?.close()}
+          >
+            Cancel
+          </button>
+        </form>
+      </dialog>
     </>
   );
 }

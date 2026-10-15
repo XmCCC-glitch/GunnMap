@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import { generatedImagePath, isValidPng, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER, MAP_REVISION_HEADER, GENERATED_AT_HEADER } from '../../web/offline/policy.js';
-import { generatedMapMetadata, removeOfflineMap, savedOfflineMapInfo, saveMapOffline } from '../../web/src/features/offline/offline-client.js';
+import { generatedImagePath, isValidPng, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER } from '../../web/offline/policy.js';
+import { removeOfflineMap, savedOfflineMap, saveMapOffline } from '../../web/src/features/offline/offline-client.js';
 
 const origin = 'https://gunnmap.test';
 const first = `/output/period_map_${'a'.repeat(32)}.png`;
@@ -12,7 +12,7 @@ const image = () => new Response(new Uint8Array(png), {headers: {'Content-Type':
 
 test('offline save only accepts same-origin, unique generated image URLs', () => {
   assert.equal(generatedImagePath(first, origin), first);
-  for (const path of ['/output/period_map.png', first.toUpperCase(), 'https://other.test' + first, first + '?schedule=secret', '/map.png', 'javascript:alert(1)']) {
+  for (const path of ['/output/period_map.png', 'https://other.test' + first, first + '?schedule=secret', '/map.png', 'javascript:alert(1)']) {
     assert.equal(generatedImagePath(path, origin), null);
   }
 });
@@ -44,37 +44,30 @@ test('explicit offline saving atomically replaces one copy and preserves it afte
   Object.defineProperty(globalThis, 'caches', {configurable: true, value: storage});
   Object.defineProperty(globalThis, 'fetch', {configurable: true, value: async (path: string) => {downloaded = path; return response.clone();}});
   try {
-    assert.equal(await savedOfflineMapInfo(), null);
+    assert.equal(await savedOfflineMap(), '');
     await saveMapOffline(first);
     assert.equal(downloaded, first);
-    assert.equal((await savedOfflineMapInfo())?.path, first);
+    assert.equal(await savedOfflineMap(), first);
     assert.equal(entries.get(PERSONAL_IMAGE_KEY)?.headers.get(PERSONAL_SOURCE_HEADER), first);
     response = new Response('error page', {headers: {'Content-Type': 'text/html'}});
     await assert.rejects(saveMapOffline(second), /complete PNG/);
-    assert.equal((await savedOfflineMapInfo())?.path, first);
+    assert.equal(await savedOfflineMap(), first);
     response = image();
-    response.headers.set(MAP_REVISION_HEADER, 'c'.repeat(64));
-    response.headers.set(GENERATED_AT_HEADER, '2026-10-03T12:34:56.000Z');
     failDecode = true;
     await assert.rejects(saveMapOffline(second), /damaged/);
-    assert.equal((await savedOfflineMapInfo())?.path, first);
+    assert.equal(await savedOfflineMap(), first);
     failDecode = false;
     failPut = true;
     await assert.rejects(saveMapOffline(second), /Quota/);
-    assert.equal((await savedOfflineMapInfo())?.path, first);
+    assert.equal(await savedOfflineMap(), first);
     failPut = false;
     await Promise.all([saveMapOffline(first), saveMapOffline(second)]);
     assert.equal(entries.size, 1);
-    const saved = await savedOfflineMapInfo();
-    assert.ok(saved && [first, second].includes(saved.path));
+    assert.ok([first, second].includes(await savedOfflineMap()));
     const final = entries.get(PERSONAL_IMAGE_KEY)!;
     assert.equal(await isValidPng(final), true);
-    const info = await savedOfflineMapInfo();
-    assert.equal(info?.mapRevision, 'c'.repeat(64));
-    assert.equal(info?.generatedAt, '2026-10-03T12:34:56.000Z');
-    assert.ok(info?.savedAt && Number.isFinite(Date.parse(info.savedAt)));
     await removeOfflineMap();
-    assert.equal(await savedOfflineMapInfo(), null);
+    assert.equal(await savedOfflineMap(), '');
     await assert.rejects(saveMapOffline('/output/period_map.png'), /cannot be saved/);
   } finally {
     for (const [key, descriptor] of originals) {
@@ -82,10 +75,4 @@ test('explicit offline saving atomically replaces one copy and preserves it afte
       else Reflect.deleteProperty(globalThis, key);
     }
   }
-});
-
-test('missing or invalid image provenance remains unknown instead of adopting the current version', () => {
-  assert.deepEqual(generatedMapMetadata(new Headers()), {mapRevision: null, generatedAt: null});
-  assert.deepEqual(generatedMapMetadata(new Headers({[MAP_REVISION_HEADER]: 'not-a-revision', [GENERATED_AT_HEADER]: 'yesterday'})),
-    {mapRevision: null, generatedAt: null});
 });

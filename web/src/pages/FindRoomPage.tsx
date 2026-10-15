@@ -3,21 +3,18 @@ import type { FormEvent } from "react";
 import { RoomInput } from "../features/rooms/RoomInput.js";
 import { usePanzoom } from "../features/maps/usePanzoom.js";
 import { buildingName, roomLocationLabel } from "../features/rooms/room-display.js";
-import { loadRoomDirectory, lookupRoom } from "../features/rooms/room-api.js";
-import { evacuationDestination } from "../features/evacuation/formatters.js";
 import type {
   LocatedRoom,
   RoomData,
 } from "../features/rooms/types.js";
 import { useToast } from "../shared/toast.js";
+import { loadRooms, lookupRoom, siteUrl } from "../features/pages/site-data.js";
 import type { CSSVariables } from "../shared/css-types.js";
-import { siteUrl } from "../features/pages/site-data.js";
 
 export function FindRoomPage() {
   const showToast = useToast();
   const [input, setInput] = useState("");
   const [rooms, setRooms] = useState<RoomData["rooms"]>([]);
-  const [mapRevision, setMapRevision] = useState("");
   const [selectedRoom, setSelectedRoom] = useState<LocatedRoom | null>(null);
   const [choices, setChoices] = useState<LocatedRoom[]>([]);
   const [message, setMessage] = useState("");
@@ -26,7 +23,7 @@ export function FindRoomPage() {
   const stage = useRef<HTMLDivElement>(null);
   const art = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
-  const lookupController = useRef<AbortController | null>(null);
+  const requestRevision = useRef(0);
   const focus = selectedRoom
     ? {
         x: selectedRoom.marker[0] / mapSize[0],
@@ -37,23 +34,19 @@ export function FindRoomPage() {
   const controls = usePanzoom(stage, art, image, { active: Boolean(selectedRoom), focus, animateFocus: true });
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadRoomDirectory(controller.signal)
+    let current = true;
+    void loadRooms()
       .then(data => {
-        if (!controller.signal.aborted) {
-          setRooms(data.rooms);
-          setMapRevision(data.map_revision);
-        }
+        if (current) setRooms(data.rooms);
       })
       .catch(() => {
-        if (!controller.signal.aborted) {
+        if (current) {
           showToast("The room list could not be loaded. Try reloading the page.");
         }
       });
 
     return () => {
-      controller.abort();
-      lookupController.current?.abort();
+      current = false;
     };
   }, [showToast]);
 
@@ -71,7 +64,8 @@ export function FindRoomPage() {
     event?.preventDefault();
     event?.currentTarget.querySelector<HTMLInputElement>("#find-room-input")?.blur();
     const query = input.trim();
-    lookupController.current?.abort();
+    requestRevision.current += 1;
+    const currentRevision = requestRevision.current;
     setSelectedRoom(null);
     setChoices([]);
     setMessage("");
@@ -80,19 +74,11 @@ export function FindRoomPage() {
       showToast("Enter a room number or alias to search.");
       return;
     }
-    if (!mapRevision) {
-      setSearching(false);
-      showToast("The current room directory is not ready. Reload the page and try again.");
-      return;
-    }
     setSearching(true);
     setMessage("Searching…");
-    const controller = new AbortController();
-    lookupController.current = controller;
     try {
-      const result = await lookupRoom(query, controller.signal);
-      if (controller.signal.aborted) return;
-      if (result.map_revision !== mapRevision) throw new Error("The campus map has changed. Reload and accept the available update before searching again.");
+      const result = await lookupRoom(query);
+      if (currentRevision !== requestRevision.current) return;
       setMapSize(result.map_size);
       if (!result.rooms.length) {
         setMessage("");
@@ -102,22 +88,31 @@ export function FindRoomPage() {
         setChoices(result.rooms);
       } else chooseRoom(result.rooms[0]);
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (currentRevision === requestRevision.current) {
         setMessage("");
         showToast(error instanceof Error ? error.message : "Room search failed.");
       }
     } finally {
-      if (!controller.signal.aborted) setSearching(false);
+      if (currentRevision === requestRevision.current) setSearching(false);
     }
   };
 
   const evacuation = selectedRoom?.evacuation;
-  const destination = selectedRoom
-    ? `${selectedRoom.label} → ${evacuationDestination(selectedRoom.evacuation)}`
+  const reference = evacuation?.reference_label
+    && !/^[A-Z]$/i.test(evacuation.reference_label)
+    ? `${evacuation.reference_label} · `
+    : "";
+  const destinationName = evacuation?.short_destination
+    ?? evacuation?.destination
+    ?? "";
+  const destination = selectedRoom && evacuation
+    ? evacuation.status === "mapped"
+      ? `${selectedRoom.label} → ${reference}${destinationName} (${evacuation.group})`
+      : `${selectedRoom.label} → ${evacuation.destination}`
     : "";
 
   const handleInputChange = (value: string) => {
-    lookupController.current?.abort();
+    requestRevision.current += 1;
     setInput(value);
     setSelectedRoom(null);
     setChoices([]);
@@ -161,7 +156,9 @@ export function FindRoomPage() {
           </button>
         </form>
         <p
-          className="room-lookup-message"
+          className={`room-lookup-message${
+            message && !message.includes("Searching") ? " is-error" : ""
+          }`}
           role="status"
           aria-live="polite"
         >
@@ -218,7 +215,7 @@ export function FindRoomPage() {
               <h2 id="room-map-title">Campus map</h2>
               <a
                 className="download-link"
-                href="/map.png"
+                href={siteUrl("/map.png")}
                 download="gunn-campus-map.png"
                 onClick={event => {
                   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;

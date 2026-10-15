@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import sharp from 'sharp';
-import { createApp } from '../web_app.js';
-import { renderPeriods } from '../schedule_render.js';
-import { resolveRoom } from '../project.js';
+import { createApp, renderPeriods, resolveRoom } from '../web_app.js';
 import { evacuationForRoom } from '../evacuation.js';
 import { rooms, roomData, ROOT } from '../project.js';
 import { renderRooms } from '../map_highlighter.js';
@@ -114,7 +112,6 @@ test('downloaded PNG includes all seven legend swatches without changing map coo
   const {data,info}=await sharp(await readFile(join(dir,result.image_url.split('/').pop()!))).raw().toBuffer({resolveWithObject:true});
   assert.deepEqual([info.width,info.height],roomData.image_size);
   assert.equal(result.selected.length, 7);
-  assert.deepEqual(Object.keys(result.selected[0]).sort(), ['building', 'color', 'evacuation', 'floor', 'id', 'label', 'marker', 'period', 'polygon']);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0],/Periods 1, 2, 3, 4, 5, 6, 7.*split/);
   const pixel=(x:number,y:number)=>Array.from(data.subarray((y*info.width+x)*info.channels,(y*info.width+x)*info.channels+3));
@@ -132,22 +129,6 @@ test('downloaded PNG includes all seven legend swatches without changing map coo
    assert.ok(dark>100,'legend text should be readable in the PNG');
   }
  } finally {await rm(dir,{recursive:true,force:true});}
-});
-test('responsive PRIME and SELF rooms appear in the rendered map and legend', async () => {
- const dir = await mkdtemp(join(tmpdir(), 'gunnmap-responsive-'));
- try {
-  const blank = Array.from({ length: 7 }, () => ({ building: '', room: '', color: '#e11d48' }));
-  const result = await renderPeriods(blank, dir, { extras: [
-   { name: 'PRIME', building: 'H', room: 'H-03', color: '#f59e0b' },
-   { name: 'SELF 11-12', building: 'N', room: 'N-211', color: '#06b6d4' },
-  ] });
-  assert.deepEqual(result.selected.map(item => [item.period, item.label]), [['PRIME', 'H3'], ['SELF 11-12', 'N211']]);
-  const image = await readFile(join(dir, result.image_url.split('/').pop()!));
-  const { width, height } = await sharp(image).metadata();
-  assert.deepEqual([width, height], roomData.image_size);
-  await assert.rejects(renderPeriods(blank, dir, { extras: [{ name: 'PRIME', building: 'H', room: 'H-03', color: '#f59e0b' }], requireIdentity: true }),
-   /map or room identity changed/);
- } finally { await rm(dir, { recursive: true, force: true }); }
 });
 test('HTTP rendering, pixels, isolated images, validation and static routes',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'gunnmap-ts-')),server=createApp(dir);
@@ -187,8 +168,7 @@ test('HTTP rendering, pixels, isolated images, validation and static routes',asy
   assert.notEqual(first.image_url, second.image_url);
   assert.deepEqual(Buffer.from(await (await fetch(base+first.image_url)).arrayBuffer()),bytes);
   await assert.rejects(readFile(join(dir, 'period_map.png')), { code: 'ENOENT' });
-  const images = [first.image_url.split('/').pop()!, second.image_url.split('/').pop()!];
-  assert.deepEqual((await readdir(dir)).sort(), images.flatMap(name => [name, name + '.json']).sort());
+  assert.deepEqual((await readdir(dir)).sort(), [first.image_url.split('/').pop(), second.image_url.split('/').pop()].sort());
   assert.equal((await fetch(base + '/output/period_map.png')).status, 404);
   const duplicatePeriods = periods('N', 'N214', '#0000ff');
   duplicatePeriods[1] = { building: 'N', room: 'N214', color: '#ff0000' };

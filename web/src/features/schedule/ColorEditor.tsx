@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { CSSVariables } from "../../shared/css-types.js";
 
 export default function ColorEditor({ period, value, swatches, onApply, onClose }: {
-  period: number | string;
+  period: number;
   value: string;
   swatches: string[];
   onApply(color: string): void;
@@ -18,7 +18,7 @@ export default function ColorEditor({ period, value, swatches, onApply, onClose 
     onCancel={event => { event.preventDefault(); close(); }}>
     <form onSubmit={event => { event.preventDefault(); event.stopPropagation(); if (valid) { onApply(color); close(); } }}>
       <div className="room-dialog-header">
-        <h2 id="color-editor-title">{typeof period === "number" ? `Period ${period}` : period} color</h2>
+        <h2 id="color-editor-title">Period {period} color</h2>
         <button type="button" className="text-button" onClick={close} aria-label="Close color editor">Close</button>
       </div>
       <div className="color-editor-swatches" role="group" aria-label="Suggested colors">

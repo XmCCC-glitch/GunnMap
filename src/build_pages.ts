@@ -2,10 +2,8 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildings, roomData, rooms, ROOT } from "./project.js";
 import { evacuationForRoom, evacuationOverview } from "./evacuation.js";
-import { MAP_REVISION, MAP_REVISION_DATE } from "./map_revision.js";
 
 const output = resolve(ROOT, "dist/web");
-const mapVersion = { map_revision: MAP_REVISION, map_revision_date: MAP_REVISION_DATE };
 await mkdir(resolve(output, "data"), { recursive: true });
 await rm(resolve(output, "sw.js"), { force: true });
 
@@ -27,9 +25,8 @@ await Promise.all([
   writeFile(resolve(output, "data/rooms.json"), JSON.stringify({
     buildings,
     rooms: located.map(({ id, label, building, floor, aliases }) => ({ id, label, building, floor, aliases })),
-    ...mapVersion,
   })),
-  writeFile(resolve(output, "data/located-rooms.json"), JSON.stringify({ rooms: located, map_size: roomData.image_size, ...mapVersion })),
+  writeFile(resolve(output, "data/located-rooms.json"), JSON.stringify({ rooms: located, map_size: roomData.image_size })),
   writeFile(resolve(output, "data/evacuation.json"), JSON.stringify(evacuationOverview())),
   copyFile(resolve(ROOT, "web/style.css"), resolve(output, "style.css")),
   copyFile(resolve(ROOT, "web/icon.svg"), resolve(output, "icon.svg")),

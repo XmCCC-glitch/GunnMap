@@ -1,6 +1,5 @@
 import { readJson, ROOT } from './project.js';
 import { validateMapFiles } from './validate_map_data.js';
-import type { EvacuationReview } from './domain/evacuation-review.js';
 type Group = 'red' | 'blue' | 'green' | 'black';
 type Pixels = [number, number, number, number];
 type Assignment = [Group, string, Pixels];
@@ -14,7 +13,7 @@ interface GroupInfo {
   description?: string;
 }
 export interface EvacuationProvenance {
-  sourceKind: 'supplied_reference' | 'official_site_map' | 'official_evacuation_plan';
+  sourceKind: 'supplied_reference' | 'official_site_map';
   originalFilename: string;
   sourceFile: string;
   sourceImageSha256: string;
@@ -24,7 +23,6 @@ export interface EvacuationProvenance {
 }
 export interface EvacuationData {
   provenance: EvacuationProvenance;
-  review: EvacuationReview;
   routesAvailable?: boolean;
   groups: Record<Group, GroupInfo>;
   inventoryExceptions: Record<string, string>;
@@ -38,24 +36,17 @@ export interface Evacuation {
   focus: {x:number; y:number; width:number; height:number} | null;
 }
 const data = readJson<EvacuationData>('evacuation_data.json');
-// Repository assets are immutable during a server run. Fail closed if a plan
-// loses its verification or its binding to the current map and inventory.
-const validationIssues = evacuationDataIssues();
-const routesAvailable = data.routesAvailable === true
-  && data.review?.status === 'verified_school_plan'
-  && validationIssues.length === 0;
 
 export function evacuationOverview() {
   return {
     provenance: data.provenance,
-    review: data.review,
-    routesAvailable,
-    groups: routesAvailable ? Object.fromEntries(Object.entries(data.groups).map(([key, group]) => [key, {
+    routesAvailable: data.routesAvailable !== false,
+    groups: Object.fromEntries(Object.entries(data.groups).map(([key, group]) => [key, {
       ...group,
       short_destination: group.shortDestination,
-    }])) : {},
+    }])),
     inventoryExceptions: data.inventoryExceptions,
-    validationIssues,
+    validationIssues: evacuationDataIssues(),
   };
 }
 
@@ -78,12 +69,10 @@ function mapped([group,reference_label,[left,top,right,bottom]]: Assignment): Ev
 }
 /** Only assign rooms explicitly supported by the supplied reference. */
 export function evacuationForRoom(room: {label?:string; building?:string}): Evacuation {
-  if (!routesAvailable) {
+  if (data.routesAvailable === false) {
     return {status:'unconfirmed',group:null,color:null,short_destination:null,reference_label:null,focus:null,
       destination:'Assembly area not confirmed for this room',
-      note: validationIssues.length
-        ? 'Evacuation plan verification needs review. No assembly assignment can be confirmed. Follow current school staff directions.'
-        : 'The September 3, 2026 school site map does not show evacuation routes or assembly points. A current school evacuation plan is awaiting verification. Follow current school staff directions.'};
+      note:'The September 3, 2026 school site map does not show evacuation routes or assembly points. Follow current school staff directions.'};
   }
   const canonical = (room.label ?? '').trim().toUpperCase().replace(/[\s-]+/g,'');
   const building = (room.building ?? '').trim().toUpperCase();

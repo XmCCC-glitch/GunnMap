@@ -16,19 +16,5 @@
   "inventoryExceptions": {},
   "ranges": [],
   "exact": {},
-  "whole": {},
-  "review": {
-    "status": "pending_school_plan",
-    "checkedOn": "2026-10-03",
-    "checkedBy": "GunnMap repository audit",
-    "mapRevision": "c9ae1f0533ede84860206db3b31a65444c9e87955fcaa24f2a09dda5b08174e7",
-    "inventorySha256": "b41052322af1244b49f40d4fbbd5b5aef7783b1560947633bf43013d597b7f1d",
-    "verifiedBy": null,
-    "note": "Reviewed the September 3, 2026 campus site map and selectable room inventory. The available site map contains no evacuation routes or assembly areas; no current school-issued evacuation plan has been supplied for verification.",
-    "missingEvidence": [
-      "A current school-issued evacuation plan with its original filename, revision date, and source image.",
-      "Confirmation by school staff that the plan applies to this campus map and room inventory.",
-      "Verified room-to-assembly assignments and reference coordinates for the current layout."
-    ]
-  }
+  "whole": {}
 }

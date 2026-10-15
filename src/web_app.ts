@@ -1,23 +1,120 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { pipeline } from 'node:stream/promises';
-import { ROOT, rooms, buildings, roomData } from './project.js';
+import sharp from 'sharp';
+import { ROOT, rooms, buildings, roomData, resolveRoom } from './project.js';
 import { findRoomMatches } from './domain/room-matching.js';
-import { evacuationDataIssues, evacuationOverview } from './evacuation.js';
-import { renderPeriods } from './schedule_render.js';
-import { toLocatedRoom, toRoomOption } from './room_response.js';
-import { GENERATED_IMAGE } from './domain/generated-map-path.js';
-import { configuredRetentionMs, DEFAULT_CLEANUP_INTERVAL_MS, validateRetentionMs } from './output_retention.js';
-import { MAP_REVISION, MAP_REVISION_DATE } from './map_revision.js';
+import { evacuationDataIssues, evacuationForRoom, evacuationOverview } from './evacuation.js';
+import { renderRooms, xml } from './map_highlighter.js';
+import { cleanupGeneratedMaps, configuredRetentionMs, DEFAULT_CLEANUP_INTERVAL_MS, removeExpiredMap, validateRetentionMs } from './output_retention.js';
 import { PublicResponseCache } from './http_cache.js';
 import { GeneratedMapStore, DEFAULT_MAP_STORAGE_BYTES, DEFAULT_MAP_MAX_BYTES } from './generated_map_store.js';
 import { assertRenderRequest, configuredInteger, HttpError, normalizePublicOrigin, RenderQueue, RenderRateLimiter, setSecurityHeaders } from './server_policy.js';
+export { resolveRoom } from './project.js';
+class InputError extends Error {}
+interface LegendItem { period: number; label: string; floor: number; color: string }
 const REVALIDATE_STATIC = 'no-cache';
 
 const evacuationIssues = evacuationDataIssues();
 if (evacuationIssues.length) {
   console.error('Evacuation data needs review:', evacuationIssues.join(' '));
+}
+
+async function addScheduleLegend(image: Buffer, selected: LegendItem[]): Promise<Buffer> {
+  if (!selected.length) return image;
+  const { width, height } = await sharp(image).metadata();
+  if (!width || !height) throw new Error('Map dimensions are missing');
+  const padding = 24;
+  const rowHeight = 34;
+  const legendWidth = 420;
+  const legendHeight = 90 + rowHeight * selected.length;
+  const left = Math.max(padding, Math.min(420, width - legendWidth - padding));
+  const top = height - legendHeight - padding;
+  const replacements: Record<string, string> = { HEIGHT: String(legendHeight) };
+
+  for (let index = 0; index < 7; index += 1) {
+    const item = selected[index];
+    const row = index + 1;
+    replacements[`ROW_${row}_DISPLAY`] = item ? 'inline' : 'none';
+    replacements[`ROW_${row}_COLOR`] = item ? xml(item.color) : '#000000';
+    replacements[`ROW_${row}_LABEL`] = item
+      ? xml(`Period ${item.period} · ${item.label}${item.floor === 2 ? ' (2F)' : ''}`)
+      : '';
+  }
+
+  const assetPath = resolve(ROOT, 'src/map/schedule-legend.svg');
+  const asset = await readFile(assetPath, 'utf8');
+  const legend = asset.replace(/__([A-Z0-9_]+)__/g, (_, name: string) => replacements[name] ?? '');
+  return sharp(image)
+    .composite([{ input: Buffer.from(legend), left, top }])
+    .removeAlpha()
+    .png()
+    .toBuffer();
+}
+
+export async function renderPeriods(periods: unknown, outputDir = resolve(ROOT,'output'), options: { store?: GeneratedMapStore; signal?: AbortSignal } = {}) {
+  if (!Array.isArray(periods) || periods.length !== 7) throw new InputError('Please submit all seven period slots');
+  const colors: Record<string, string[]> = {};
+  const selected = [];
+  const warnings: string[] = [];
+
+  for (const [slot, value] of periods.entries()) {
+    const index = slot + 1;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new InputError(`Period ${index} has invalid data`);
+    }
+
+    const period = value as Record<string, unknown>;
+    const building = String(period.building ?? '').trim().toUpperCase();
+    const roomName = String(period.room ?? '').trim();
+    const color = String(period.color ?? '').trim();
+    if (!roomName) continue;
+    if (!building) throw new InputError(`Period ${index}: choose a building for ${roomName}`);
+    if (!/^#[0-9a-f]{6}$/i.test(color)) throw new InputError(`Period ${index}: invalid color`);
+
+    let room;
+    try {
+      room = resolveRoom(building, roomName);
+    } catch (error) {
+      throw new InputError(`Period ${index}: ${(error as Error).message}`);
+    }
+
+    (colors[room.id] ??= []).push(color);
+    selected.push({
+      period: index,
+      id: room.id,
+      label: room.label,
+      building: room.building,
+      floor: room.floor ?? 1,
+      color,
+      polygon: room.polygon,
+      evacuation: evacuationForRoom(room),
+      marker: [
+        (room.label_box[0] + room.label_box[2]) / 2,
+        (room.label_box[1] + room.label_box[3]) / 2,
+      ],
+    });
+  }
+
+  for (const id of Object.keys(colors)) {
+    const shared = selected.filter(item => item.id === id);
+    if (shared.length > 1) {
+      warnings.push(`Periods ${shared.map(item => item.period).join(', ')} share ${shared[0].label}; its map highlight is split into each period's color.`);
+    }
+  }
+
+  const store = options.store ?? new GeneratedMapStore(outputDir, DEFAULT_MAP_STORAGE_BYTES, DEFAULT_MAP_MAX_BYTES, configuredRetentionMs());
+  const reservation = await store.reserve();
+  let filename: string;
+  try {
+    if (options.signal?.aborted) throw new HttpError(503, 'Map request was cancelled');
+    const highlighted = await renderRooms(colors, { opacity: 0.55 });
+    const bytes = await addScheduleLegend(highlighted, selected);
+    filename = await reservation.write(bytes, options.signal);
+  } finally { reservation.release(); }
+
+  return { image_url: `/output/${filename}`, selected, warnings, map_size: roomData.image_size };
 }
 
 function send(
@@ -39,20 +136,20 @@ async function payload(req: IncomingMessage): Promise<unknown> {
   let size = 0;
   if (Number(req.headers['content-length']) > 16000) {
     req.resume();
-    throw new HttpError(400, 'Request is empty or too large');
+    throw new InputError('Request is empty or too large');
   }
   for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
-    if (size > 16000) { req.resume(); throw new HttpError(400, 'Request is empty or too large'); }
+    if (size > 16000) { req.resume(); throw new InputError('Request is empty or too large'); }
     chunks.push(chunk);
   }
   if (!size) {
-    throw new HttpError(400, 'Request is empty or too large');
+    throw new InputError('Request is empty or too large');
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    throw new HttpError(400, 'Invalid JSON request');
+    throw new InputError('Invalid JSON request');
   }
 }
 
@@ -93,11 +190,24 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
   if (!Number.isFinite(cleanupIntervalMs) || cleanupIntervalMs <= 0 || cleanupIntervalMs > 2 ** 31 - 1) {
     throw new Error('Cleanup interval must be between 1 and 2147483647 milliseconds');
   }
-  const roomList = rooms.map(toRoomOption);
-  const mapVersion = { map_revision: MAP_REVISION, map_revision_date: MAP_REVISION_DATE };
-  const roomDirectory = Buffer.from(JSON.stringify({ buildings, rooms: roomList, ...mapVersion }));
-  const locatedRooms = rooms.map(toLocatedRoom);
-  const offlineRoomDirectory = Buffer.from(JSON.stringify({ rooms: locatedRooms, map_size: roomData.image_size, ...mapVersion }));
+  const roomList = rooms.map(({ id, label, building, floor, aliases }) => ({
+    id, label, building, floor: floor ?? 1, aliases: aliases ?? [],
+  }));
+  const roomDirectory = Buffer.from(JSON.stringify({ buildings, rooms: roomList }));
+  const locatedRooms = rooms.map(room => ({
+    id: room.id,
+    label: room.label,
+    building: room.building,
+    floor: room.floor ?? 1,
+    aliases: room.aliases ?? [],
+    polygon: room.polygon,
+    marker: [
+      (room.label_box[0] + room.label_box[2]) / 2,
+      (room.label_box[1] + room.label_box[3]) / 2,
+    ],
+    evacuation: evacuationForRoom(room),
+  }));
+  const offlineRoomDirectory = Buffer.from(JSON.stringify({ rooms: locatedRooms, map_size: roomData.image_size }));
   // Inventory and assignments are loaded once at startup. Avoid repeating the
   // synchronous image provenance check on every public API request.
   const evacuationDirectory = Buffer.from(JSON.stringify(evacuationOverview()));
@@ -106,31 +216,26 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
     try {
       const requestUrl = new URL(req.url ?? '/', 'http://localhost');
       const pathname = requestUrl.pathname;
-      const generatedMap = pathname.match(GENERATED_IMAGE);
 
       if (req.method === 'POST' && pathname === '/api/render') {
         assertRenderRequest(req, publicOrigin);
         rateLimiter.consume(req.socket.remoteAddress ?? 'unknown');
         const body = await payload(req);
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
-          throw new HttpError(400, 'Invalid request object');
+          throw new InputError('Invalid request object');
         }
         const controller = new AbortController();
         const abort = () => { if (!res.writableEnded) controller.abort(); };
         res.on('close', abort);
         try {
           const result = await renderQueue.run(() => renderPeriods(
-            (body as { periods?: unknown }).periods, outputDir, {
-              store: mapStore, signal: controller.signal,
-              requireIdentity: req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined,
-              extras: (body as { extras?: unknown }).extras,
-            },
+            (body as { periods?: unknown }).periods, outputDir, { store: mapStore, signal: controller.signal },
           ), controller.signal);
           if (!res.destroyed) return send(res, 200, JSON.stringify(result));
           return;
         } finally { res.off('close', abort); }
       }
-      if (req.method !== 'GET' && !(req.method === 'HEAD' && generatedMap)) {
+      if (req.method !== 'GET') {
         const status = req.method === 'POST' ? 404 : 405;
         return send(res, status, JSON.stringify({ error: 'Not found' }));
       }
@@ -142,9 +247,9 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
       }
       if (pathname === '/api/room-lookup') {
         const query = requestUrl.searchParams.get('q')?.trim() ?? '';
-        if (!query) throw new HttpError(400, 'Enter a room number or room alias.');
+        if (!query) throw new InputError('Enter a room number or room alias.');
         const matches = findRoomMatches(locatedRooms, query);
-        return send(res, 200, JSON.stringify({ rooms: matches, map_size: roomData.image_size, ...mapVersion }));
+        return send(res, 200, JSON.stringify({ rooms: matches, map_size: roomData.image_size }));
       }
       if (pathname === '/api/evacuation-data') {
         return await publicCache.send(req, res, publicCache.buffer('evacuation-data', evacuationDirectory), 'application/json; charset=utf-8');
@@ -173,14 +278,16 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
         '/pwa-icon-192.png': ['web/pwa-icon-192.png', 'image/png'],
         '/pwa-icon-512.png': ['web/pwa-icon-512.png', 'image/png'],
         '/map.webp': ['dist/web/map.webp', 'image/webp'],
-        '/evacuation-map.webp': ['dist/web/map.webp', 'image/webp'],
+        '/evacuation-map.webp': ['dist/web/evacuation-map.webp', 'image/webp'],
         '/map.png': ['src/map/gunn_site_map.png', 'image/png'],
         '/evacuation-map.png': ['src/map/gunn_site_map.png', 'image/png'],
       };
 
       let file = files[pathname];
       let cacheControl = REVALIDATE_STATIC;
+      const generatedMap = pathname.match(/^\/output\/(period_map_[0-9a-f]{32}\.png)$/);
       if (generatedMap) {
+        await removeExpiredMap(outputDir, generatedMap[1], retentionMs);
         file = [resolve(outputDir, generatedMap[1]), 'image/png'];
       }
 
@@ -207,29 +314,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
       }
       try {
         const path = resolve(ROOT, file[0]);
-        if (generatedMap) {
-          const image = await mapStore.openImage(generatedMap[1]);
-          try {
-            res.writeHead(200, {
-              'Content-Type': 'image/png',
-              'Content-Length': image.size,
-              'Cache-Control': 'no-store',
-              ...(image.metadata ? {
-                'X-GunnMap-Map-Revision': image.metadata.map_revision,
-                'X-GunnMap-Generated-At': image.metadata.generated_at,
-              } : {}),
-            });
-            if (req.method === 'HEAD') { res.end(); return; }
-            // pipeline applies response backpressure and destroys the read stream
-            // if the client disconnects; never buffer the entire personal PNG.
-            if (!image.size) { res.end(); return; }
-            await pipeline(image.handle.createReadStream({ autoClose: false, end: image.size - 1 }), res);
-            return;
-          } catch (error) {
-            if (!res.destroyed) throw error;
-            return;
-          } finally { await image.handle.close(); }
-        }
+        if (generatedMap) return send(res, 200, await readFile(path), file[1]);
         const extraHeaders: Record<string, string> = pathname === '/sw.js' ? { 'Service-Worker-Allowed': '/' } : {};
         return await publicCache.send(req, res, await publicCache.file(path), file[1], cacheControl, extraHeaders);
       } catch (error) {
@@ -240,13 +325,13 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
       }
     } catch (error) {
       if (!res.headersSent) {
-        const status = error instanceof HttpError ? error.status : 500;
-        const message = error instanceof HttpError ? error.message : 'Unable to generate map';
+        const status = error instanceof HttpError ? error.status : error instanceof InputError ? 400 : 500;
+        const message = error instanceof InputError || error instanceof HttpError ? error.message : 'Unable to generate map';
         if (error instanceof HttpError && error.retryAfter !== undefined) res.setHeader('Retry-After', error.retryAfter);
         if (!res.destroyed) send(res, status, JSON.stringify({ error: message }));
       }
       else res.end();
-      if (!(error instanceof HttpError)) console.error(error);
+      if (!(error instanceof InputError) && !(error instanceof HttpError)) console.error(error);
     }
   });
   server.headersTimeout = 10_000;
@@ -256,7 +341,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
   let cleaning: Promise<unknown> | undefined;
   const cleanup = () => {
     if (cleaning) return;
-    cleaning = mapStore.cleanup()
+    cleaning = cleanupGeneratedMaps(outputDir, retentionMs)
       .catch(error => console.error('Unable to clean up expired maps', error))
       .finally(() => { cleaning = undefined; });
   };
@@ -265,7 +350,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
     timer = setInterval(cleanup, cleanupIntervalMs);
     timer.unref();
   });
-  server.on('close', () => { if (timer) clearInterval(timer); timer = undefined; mapStore.close(); });
+  server.on('close', () => { if (timer) clearInterval(timer); timer = undefined; });
   return server;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

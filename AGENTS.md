@@ -32,10 +32,9 @@ GunnMap/
 ```
 
 - `src/map_highlighter.ts` is the Sharp renderer for building and room polygons, including color strips for repeated rooms.
-- `src/web_app.ts` serves the React SPA shell and JSON APIs. `src/schedule_render.ts` validates and generates schedules, `src/schedule_legend.ts` draws their legends, and `src/room_response.ts` maps inventory rooms to API responses. `src/output_retention.ts` manages expiry. Never write or expose a shared latest-map URL.
+- `src/web_app.ts` serves the React SPA shell and JSON APIs, attaches assembly information, and atomically writes unique per-render PNGs. `src/output_retention.ts` manages expiry. Never write or expose a shared latest-map URL.
 - `web/src/app/` contains the React bootstrap, route table, and persistent navigation shell. `web/src/pages/` contains the four route pages; reusable schedule, room, map, and evacuation behavior belongs under `web/src/features/`; shared controls and notifications belong in `web/src/shared/`.
 - `src/domain/room-matching.ts` contains room identity matching shared by the browser and Node server. Keep cross-runtime domain rules outside `web/src/`.
-- `src/domain/room-contracts.ts` defines the shared room API types; `src/domain/generated-map-path.ts` defines the personal-map URL rule used by the server and offline/browser code.
 - `web/index.html` is the shared SPA shell. Vite builds the browser entry from `web/src/app/main.tsx` into `dist/web/main.js` and `dist/web/ui.css`; the server returns the same shell for `/`, `/evacuation`, `/find-room`, and `/generate-map`.
 - `src/evacuation.ts` and `src/data/evacuation_data.json` keep evacuation assignments unconfirmed until a verified plan for the 2026 map is available.
 - `src/project.ts` loads the inventory and resolves room IDs and aliases.
@@ -62,22 +61,11 @@ GunnMap/
 - Do not infer evacuation routes or destinations from the September 2026 site map. All room assignments remain unconfirmed until a current school evacuation plan is verified.
 - Put temporary renders in `output/` or a temporary directory; commit only deliberate `demo_*.png` or `demo_*.webp` files for documentation.
 
-## Code design requirements
-
-- Keep modules and components cohesive, loosely coupled, and responsible for one concrete concern. Route pages compose feature behavior and UI; HTTP handlers manage requests and responses rather than drawing maps or implementing schedule rules.
-- Prefer simple, efficient, readable code. Extract shared logic when existing callers need it, and use explicit names and normal formatting for complex calculations. Do not introduce generic frameworks, speculative extension points, or abstractions without a current use.
-- Do not write fallback, redundant, or speculative code to make uncertain behavior appear to work. Do not guess API field names or try a series of possible IDs. Use the actual documented or implemented contract, validate input at its boundary, and report failures explicitly instead of silently substituting a different business state.
-- Ask the user before implementing behavior whose contract or requirements are unclear. Existing code, API implementations, and verified data should establish known behavior; assumptions must not replace missing evidence.
-- Keep shared room/API types and domain rules in `src/domain/` so the server, browser, and offline worker use the same definitions. Do not duplicate matching, path validation, or destination formatting rules in pages.
-- Remove unused APIs, event listeners, declarations, and styles during refactoring. Check their real callers before removing existing migration or data-protection behavior, and preserve saved user data and the ability to roll back.
-- Verify behavior at the boundaries affected by a refactor. Regression tests should cover actual failures and user flows, not duplicate implementation details. Run the verification commands below before marking work complete.
-
-## GitHub account, pull requests, and main branch
+## GitHub account and main branch
 
 - For requests involving a pull request (for example, “help me create PR”), merging, or changing `main`, check the currently authenticated GitHub account with `gh api user --jq .login` before taking any action that would merge into or directly update `main`.
 - Only merge a pull request into `main` or push changes directly to `main` when that command returns exactly `Ijustneedanid` or `XmCCC-glitch`. Check again immediately before the merge or push; a Git commit author, email address, or remote URL is not proof of the authenticated account.
 - If the account cannot be verified or does not match either allowed login, do not merge or push to `main`. Explain the result to the user and leave any prepared pull request open for an authorized account to merge.
-- After creating a pull request, request a Codex review by posting a separate pull request comment containing exactly `@codex review`. Put the trigger in a comment, not at the bottom of the pull request description.
 
 ## Verification
 

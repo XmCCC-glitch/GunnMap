@@ -4,8 +4,6 @@
 
 An unofficial campus map for Henry M. Gunn High School. The React browser app, Node.js server, map tools, and checks are written in TypeScript. No Python runtime is required.
 
-**Live site:** [GunnMap on GitHub Pages](https://xmccc-glitch.github.io/GunnMap/). The static site is deployed from the `github-page-10/6` branch.
-
 <table>
   <tr>
     <th>Schedule Map</th>
@@ -31,10 +29,6 @@ An unofficial campus map for Henry M. Gunn High School. The React browser app, N
 
 The `github-page-10/6` branch builds a static version at `https://xmccc-glitch.github.io/GunnMap/` through `.github/workflows/pages.yml`. In repository **Settings → Pages**, set **Build and deployment → Source** to **GitHub Actions**. Pushing that branch then builds and deploys the site. To verify the artifact locally, run `npm run build:pages` and serve `dist/web` under `/GunnMap/`.
 
-### Optional Infinite Campus connector
-
-Start the local companion service in `../infinite-campus-mcp` with `.venv/bin/python server.py --http`. On that same computer, open the local GunnMap app and select **Connect Infinite Campus** on the Schedule Map homepage, then complete sign-in on the official school page. The companion stores the school session locally and exposes the current term's period JSON only on `127.0.0.1:8765`. The local app refreshes this JSON when the page opens or regains focus, fills active numeric periods for the selected date, and shows PRIME/SELF/Study Hall placements separately. Use **Open Responsive Schedule** to choose those sessions on Infinite Campus; returning to GunnMap refreshes the selected placement. **Download period JSON** saves a copy explicitly. On the Pages site, which also works on iPad, enter a ClassLink student ID and password and select **Connect Infinite Campus**. The test-phase sync backend (`gunnmap_sync.py` in `../infinite-campus-mcp`) signs in with a fresh headless browser, returns the same period JSON, and discards the password and session. Set `VITE_CAMPUS_SYNC_URL` when building to point at a different backend. The browser keeps only the period JSON and offers **Forget saved Campus schedule**. **Import period JSON instead** still accepts a file downloaded from the local app. The Pages site draws the map in the browser, including rooms for selected responsive sessions, and displays it below the editor.
-
 The Pages build includes the current room directory, room search, evacuation status, and browser-generated schedule PNGs. Schedule drafts and generated images stay in the browser; no Node API or image store runs on GitHub Pages. Generated images can be downloaded, but the Pages version does not offer the server version's offline save and service worker. The browser build is mounted under `/GunnMap/` and includes entry points for direct visits to each client route.
 
 Install Node.js 22.12 or newer, then:
@@ -55,35 +49,19 @@ The server binds to `127.0.0.1` by default. Set `HOST` and `PORT` to configure i
 
 Compiled files live in `dist/`, including the React browser bundles and service worker in `dist/web/`. Keep `web/index.html`, `web/style.css`, the web app manifest and icons, `public/assets/`, `src/map/`, `src/data/room_regions.json`, `src/data/room_index.csv`, `src/data/building_regions.json`, and `src/data/evacuation_data.json` alongside `dist/` when deploying. The server serves the same SPA shell for all four routes and delivers its bundle and static assets from these locations.
 
-## Code organization
-
-Follow [AGENTS.md](AGENTS.md) for development requirements: cohesive modules, single responsibilities, explicit contracts, readable code, and no speculative compatibility or unused extension points. Ask about unclear behavior before implementing it.
-
-Route pages compose feature components and hooks. Schedule editing, history, rendering requests, and dialogs have separate responsibilities under `web/src/features/schedule/`. Room requests share `room-api.ts`, and destination text uses one formatter. The HTTP server delegates schedule validation and rendering to `src/schedule_render.ts`, SVG legend drawing to `src/schedule_legend.ts`, and room serialization to `src/room_response.ts`. The server, browser, and offline worker share room API types and personal-map URL rules in `src/domain/`.
-
 ## Campus maps
 
 ### Schedule Map
 
 Enter a room and choose a color for each of seven periods. A recognized room label or alias selects its building automatically. Matching ignores case, spaces, Unicode hyphens, and full-width characters, so `A134`, `a-134`, and `Ａ１３４` resolve to the same room. Room inputs use the themed, accessible autocomplete component, with human-readable labels and no internal IDs; duplicate labels use location aliases. Missing and ambiguous matches appear beside the relevant input with choices where available. Generate Map focuses the first unresolved room. Periods can be left blank.
 
-Generate Map creates a downloadable PNG below the editor on Schedule Map. Existing `/generate-map` links still open previously saved images. Panzoom handles dragging, mouse-wheel zoom, and touch gestures while keeping the image within the viewer. The separate Campus Map & Evacuation Status page shows the current school map and marks evacuation assignments unconfirmed. If several periods share a room, the PNG map highlight shows every period color.
-
-Editing the schedule or leaving the editor cancels its pending generation request and image load. A 60-second deadline covers the request, response parsing, and image decoding; timeout restores the Generate Map button and prompts a retry. Late responses cannot open an obsolete preview. Disconnecting cancels queued server work and prevents a cancelled render from publishing its output; a Sharp operation already in progress may finish before the next cancellation check.
+Generate Map creates a downloadable PNG and opens `/generate-map` with that exact image. Panzoom handles dragging, mouse-wheel zoom, and touch gestures while keeping the image within the viewer. The separate Campus Map & Evacuation Status page shows the current school map and marks evacuation assignments unconfirmed. If several periods share a room, the PNG map highlight shows every period color.
 
 The editor supports Undo and Redo for recent room edits, template creation, replacement and deletion, examples, and clearing the schedule. Save Current stores a named schedule on this device. Share Link first previews the shared schedule and lets the user choose whether to use it temporarily, save it on this device, or keep the current schedule. Temporary edits stay separate across page changes until explicitly saved. Drafts and templates use versioned cookies; previous-version cookies are read for compatibility and never overwritten, so returning to the previous release retains its saved data. They are not tied to an account or cloud database.
-
-Saved rooms include stable room IDs and a revision fingerprint covering the campus map and inventory. Older drafts, templates, and shared schedules require review before generation or showing current room markers. The editor preserves their saved copy while review edits remain in session storage; confirm the displayed current room choices or replace unresolved inputs. Drafts retain the prior version-1 envelope with additive metadata so the previous release can still read their seven period rows. Template saves use a small index and separate immutable cookies, support eight ordinary schedules, and check both individual-cookie and total request-header capacity before writing. A write rejected before index publication preserves the previous index and templates. If publication succeeds but its confirmation read fails, both existing and newly staged data are retained until the outcome can be confirmed; the original single-cookie templates remain a read-only fallback.
-
-Where available, browser locks serialize template writes and cleanup across tabs. Once the new index is published, a cleanup failure cannot roll it back or delete its entries. Browsers without this coordination retain older immutable entries instead of risking another tab's save; the same total capacity limit safely refuses further writes when retention fills the budget. Saving remains available, but that fallback can reach capacity earlier after repeated replacements.
 
 ### Campus Map & Evacuation Status
 
 The `/evacuation` page shows the September 2026 official site map. It has no verified evacuation routes or assembly points, so room assignments are unconfirmed. Open the map to zoom and pan it in a same-page viewer; use the `×` button to close it or download the PNG. When a schedule is saved on the device, period circles identify its classrooms without implying an evacuation destination. Reference notes identify the source and verification status.
-
-Selecting a period inside the enlarged viewer opens persistent room details, including its floor, building, assembly status, and source note. Visible period buttons also allow selection without targeting a small marker. Saved rooms from an older or unknown revision stay hidden until reviewed in the schedule editor. The page separates the campus site-map source from school evacuation-plan verification and lists missing evidence. See [EVACUATION_REVIEW.md](EVACUATION_REVIEW.md) for the verification workflow.
-
-Room-query failures are shown as loading failures. They do not replace confirmed room identities with guessed locations or tell the user that a network failure is an incorrect room name.
 
 ### Find a Room
 
@@ -93,7 +71,7 @@ The separate Find a Room page supports a room number or familiar aliases such as
 
 All map viewers include visible zoom and reset controls. When the map is focused, use +/− to zoom, arrow keys to pan, and Home or 0 to reset.
 
-The navigation links to Schedule Map, Evacuation Status, and Find a Room. On narrow screens, the GunnMap brand scrolls away while the navigation remains available. Switching pages preserves the brand's current position: if it is fully visible, partly visible, or hidden, it stays in that state on the next page, including when that page is too short to scroll naturally. Scrolling back toward the top reveals it. Page cards share the same border, width, and outer gutter. The assembly-status heading moves above its cards when the available width is limited. At widths up to 430 px, building selection is created only when the manual-building control is opened; room auto-detection remains the default. The site includes a web app manifest and install icons for supported browsers.
+The navigation links to Schedule Map, Evacuation Status, Find a Room, and Generated Map. On narrow screens, the GunnMap brand scrolls away while the navigation remains available. Switching pages preserves the brand's current position: if it is fully visible, partly visible, or hidden, it stays in that state on the next page, including when that page is too short to scroll naturally. Scrolling back toward the top reveals it. Page cards share the same border, width, and outer gutter. The assembly-status heading moves above its cards when the available width is limited. At widths up to 430 px, building selection is created only when the manual-building control is opened; room auto-detection remains the default. The site includes a web app manifest and install icons for supported browsers.
 
 ### Offline use
 
@@ -101,13 +79,9 @@ On HTTPS or localhost, the app downloads a consistent version of its pages, camp
 
 On Generated Map, choose **Save offline** to keep one personal map on this device. Saving another replaces it only after a complete image downloads and decodes successfully. **Remove offline copy** deletes it. Personal maps are never automatically put into the offline cache. Download PNG remains available for browsers without service workers or when browser storage is full. Browser settings can clear offline data.
 
-Generated maps carry the revision and generation date captured when they were made, with durable per-image metadata on the server and metadata headers in the saved offline entry. The preview labels older or unknown versions and links back to room review and regeneration. A public app update preserves the personal image and its original metadata. Legacy images without provenance remain available with an unknown-version message; they are never stamped with the current revision.
-
 An available app update offers an explicit reload. A per-resource revision manifest reuses unchanged public assets from the previous cache and downloads changed resources. The new worker activates only after its complete cache has been prepared; a failed install preserves the previous working version and the saved personal image. For browser changes during development, rebuild, reload, and accept the update prompt. Existing open pages continue using their previous complete build until the update is activated. Room lookup and saved personal images use a bounded network wait before falling back to their offline copies, including when a weak connection hangs instead of failing immediately.
 
 Public maps are displayed and cached as lossless WebP files built from the original PNGs. The build preserves their pixels, dimensions and map coordinates. Download PNG creates a real PNG from this display copy in the browser, so downloading also works offline without caching both formats. The official PDF and its PNG render remain in `src/map/`.
-
-All current campus views share `/map.webp`. `/evacuation-map.webp` remains a compatible alias online and offline without building, downloading, or storing a second copy.
 
 ## Map data and maintenance
 
@@ -119,15 +93,13 @@ Default colors and the example schedule are stored in `web/src/features/schedule
 
 Public static files and inventory JSON use ETags for revalidation; text responses support gzip, and Vite assets with content hashes can be cached for a year. A bounded server cache reuses file bytes, compressed representations and their ETags, avoiding repeated reads and compression for unchanged requests. File metadata is rechecked so development rebuilds invalidate cached representations. The landing schedule is included in the entry to avoid a serial script request; secondary pages and the color editor load separately. Personal generated images use `Cache-Control: no-store` and unique URLs. The shared `/output/period_map.png` URL is neither written nor served.
 
-The server retains completed generated images for seven days by default. Set a positive `MAP_RETENTION_DAYS` value to change this, for example `MAP_RETENTION_DAYS=14 npm run dev`. Expired URLs return 404 immediately; startup, scheduled cleanup, and storage reconciliation remove expired files. Cleanup only targets completed UUID image files and preserves demos, temporary files, and source assets. Render admission, concurrency, queue length and storage budgets are bounded; reaching a limit rejects new work rather than deleting unexpired images. Tune these limits against measured traffic and available server resources.
-
-The store accounts owned writes and deletions incrementally, reconciles at startup and on the cleanup timer, and observes external directory changes. A metadata check of known files before commit preserves quota checks for immediate external overwrites; unsupported directory watching falls back to conservative reconciliation. Inventory checks use at most 16 workers and complete the image phase before checking sidecars. Failed scans finish outstanding work and require reconciliation before retry. PNG provenance sidecars count toward the same storage budget and expire with their images. Personal downloads stream from a checked regular-file handle with backpressure and stop on disconnect; HEAD exposes image provenance without downloading its bytes. GET and HEAD validate their own handles and expiry without waiting for storage scans or writes.
+The server retains completed generated images for seven days by default. Set a positive `MAP_RETENTION_DAYS` value to change this, for example `MAP_RETENTION_DAYS=14 npm run dev`. Expired images are removed at startup, every hour, and on download requests; expired URLs return 404. Cleanup only targets completed UUID image files and preserves demos, temporary files, and source assets. Render admission, concurrency, queue length and storage budgets are bounded; reaching a limit rejects new work rather than deleting unexpired images. Tune these limits against measured traffic and available server resources.
 
 Drafts and templates remain versioned JavaScript-readable cookies for compatibility. HTTPS cookies have `Secure` and `SameSite=Lax`; HTTP localhost remains usable for development. Public API and image fetches omit credentials. Cookies can still accompany ordinary same-origin navigation and asset requests: do not log Cookie headers, and do not describe these drafts as guaranteed to stay off the server. Sharing encodes schedules in the URL fragment, which is not sent in HTTP request URLs.
 
 ## Server limits and deployment
 
-`POST /api/render` accepts `application/json` only. Browser requests must originate from the same site and include the current `mapRevision` and matching `roomId` in each occupied period. A stale cached page receives 409 with a reload-and-review message before rendering or reserving storage. Supplied identity metadata is also checked for non-browser requests; headerless clients and direct rendering remain compatible when metadata is absent. Room lookup refuses mismatched live coordinates while an older campus map is active. Cross-site Fetch Metadata is rejected. Defaults are intentionally bounded and configurable:
+`POST /api/render` accepts `application/json` only. Browser requests must originate from the same site; non-browser clients without an Origin header remain supported. Cross-site Fetch Metadata is rejected. Defaults are intentionally bounded and configurable:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -178,4 +150,4 @@ npm test
 npm run build
 ```
 
-The tests cover room matching, map panning and keyboard controls, data integrity, evacuation assignments, rendering, API contracts, HTTP caching and compression, retention, and offline behavior. React tests mount the actual editor and autocomplete in jsdom to check persistence, share isolation, templates, Undo/Redo, validation, and stale asynchronous work. Worker tests execute the built service worker to check public and personal cache boundaries, offline lookup, and recovery. Evacuation boundary cases are stored in `src/data/evacuation_test_cases.json`. `npm test` builds the browser app before running the TypeScript checks. Server, browser, and service worker configurations enable strict type checking. GitHub Actions runs type checks, one production build, then `npm run test:built` against that build on pushes and pull requests; the standalone test command still prepares browser assets itself. Official checkout and Node setup actions are pinned to verified release commits, with read-only repository permissions and no persisted checkout credentials.
+The tests cover room matching, map panning and keyboard controls, data integrity, evacuation assignments, rendering, API contracts, HTTP caching and compression, retention, and offline behavior. React tests mount the actual editor and autocomplete in jsdom to check persistence, share isolation, templates, Undo/Redo, validation, and stale asynchronous work. Worker tests execute the built service worker to check public and personal cache boundaries, offline lookup, and recovery. Evacuation boundary cases are stored in `src/data/evacuation_test_cases.json`. `npm test` builds the browser app before running the TypeScript checks. Server, browser, and service worker configurations enable strict type checking. GitHub Actions runs type checks, tests, and a production build on pushes and pull requests.

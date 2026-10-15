@@ -55,19 +55,14 @@ function drawPolygon(context: CanvasRenderingContext2D, polygon: Point[], color:
   context.globalAlpha = 1;
 }
 
-export async function renderPagesMap(periods: Period[], extras: Array<{ name: string; room: string; building: string; color: string }> = []): Promise<string> {
+export async function renderPagesMap(periods: Period[]): Promise<string> {
   const { rooms, map_size } = await loadLocatedRooms();
-  const chosen: Array<{ name: string; room: LocatedRoom; color: string }> = [];
+  const chosen: Array<{ period: number; room: LocatedRoom; color: string }> = [];
   for (const [index, period] of periods.entries()) {
     if (!period.room.trim()) continue;
     const matches = findRoomMatches(rooms, period.room, period.building);
     if (matches.length !== 1) throw new Error(`Period ${index + 1}: choose a recognized room.`);
-    chosen.push({ name: `Period ${index + 1}`, room: matches[0], color: period.color });
-  }
-  for (const extra of extras.slice(0, 3)) {
-    const matches = findRoomMatches(rooms, extra.room, extra.building);
-    if (matches.length !== 1) continue;
-    chosen.push({ name: extra.name, room: matches[0], color: extra.color });
+    chosen.push({ period: index + 1, room: matches[0], color: period.color });
   }
 
   const source = new Image();
@@ -112,7 +107,7 @@ export async function renderPagesMap(periods: Period[], extras: Array<{ name: st
       context.fillStyle = item.color;
       context.fillRect(left + 24, y - 18, 16, 16);
       context.fillStyle = "#19191c";
-      context.fillText(`${item.name} · ${item.room.label}${item.room.floor === 2 ? " (2F)" : ""}`, left + 52, y);
+      context.fillText(`Period ${item.period} · ${item.room.label}${item.room.floor === 2 ? " (2F)" : ""}`, left + 52, y);
     }
   }
   return canvas.toDataURL("image/png");

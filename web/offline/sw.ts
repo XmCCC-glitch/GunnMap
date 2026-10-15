@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
 import { findRoomMatches } from '../../src/domain/room-matching.js';
-import type { RoomLookupResponse } from '../../src/domain/room-contracts.js';
 import { appRoute, GENERATED_IMAGE, isValidPng, NETWORK_GET_TIMEOUT_MS, PERSONAL_CACHE, PERSONAL_IMAGE_KEY, PERSONAL_SOURCE_HEADER, PUBLIC_CACHE_PREFIX, PUBLIC_MANIFEST_KEY, UNSAVED_IMAGE_TIMEOUT_MS } from './policy.js';
 
 declare const __OFFLINE_VERSION__: string;
@@ -144,7 +143,7 @@ async function savedImage(path: string): Promise<Response | undefined> {
     const cache = await caches.open(PERSONAL_CACHE);
     const response = await cache.match(PERSONAL_IMAGE_KEY);
     if (!response || response.headers.get(PERSONAL_SOURCE_HEADER) !== path) return;
-    if (await isValidPng(response)) return response;
+    if (await isValidPng(response.clone())) return response;
     await cache.delete(PERSONAL_IMAGE_KEY);
   } catch {
     // Unavailable browser storage is handled like an unavailable saved image.
@@ -152,21 +151,23 @@ async function savedImage(path: string): Promise<Response | undefined> {
   return undefined;
 }
 
+interface OfflineRoom {
+  id: string; label: string; building: string; aliases?: string[];
+}
+interface OfflineDirectory { rooms: OfflineRoom[]; map_size: [number, number] }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const string = (value: unknown): value is string => typeof value === 'string';
 const nullableString = (value: unknown) => value === null || string(value);
 const point = (value: unknown): value is [number, number] => Array.isArray(value) && value.length === 2 && value.every(n => typeof n === 'number' && Number.isFinite(n));
 
 /** Validate the fields used by matching, room details and map overlays. */
-function validDirectory(value: unknown): value is RoomLookupResponse {
-  if (!record(value) || !string(value.map_revision) || !/^[a-f0-9]{64}$/.test(value.map_revision)
-    || !string(value.map_revision_date) || !/^\d{4}-\d{2}-\d{2}$/.test(value.map_revision_date)
-    || !point(value.map_size) || !value.map_size.every(n => Number.isInteger(n) && n > 0)
+function validDirectory(value: unknown): value is OfflineDirectory {
+  if (!record(value) || !point(value.map_size) || !value.map_size.every(n => Number.isInteger(n) && n > 0)
     || !Array.isArray(value.rooms) || !value.rooms.length) return false;
   const ids = new Set<string>();
   return value.rooms.every(room => {
     if (!record(room) || !string(room.id) || !room.id || ids.has(room.id) || !string(room.label) || !room.label
-      || !string(room.building) || !room.building || !Array.isArray(room.aliases) || !room.aliases.every(string)
+      || !string(room.building) || !room.building || (room.aliases !== undefined && (!Array.isArray(room.aliases) || !room.aliases.every(string)))
       || typeof room.floor !== 'number' || !Number.isInteger(room.floor) || room.floor < 1
       || !point(room.marker) || !Array.isArray(room.polygon) || room.polygon.length < 3 || !room.polygon.every(point)) return false;
     const evacuation = room.evacuation;
@@ -179,7 +180,7 @@ function validDirectory(value: unknown): value is RoomLookupResponse {
   });
 }
 
-async function readDirectory(response: Response | undefined): Promise<RoomLookupResponse | null> {
+async function readDirectory(response: Response | undefined): Promise<OfflineDirectory | null> {
   if (!response?.ok) return null;
   try {
     const data: unknown = await response.clone().json();
@@ -187,8 +188,8 @@ async function readDirectory(response: Response | undefined): Promise<RoomLookup
   } catch { return null; }
 }
 
-let directoryPromise: Promise<RoomLookupResponse | null> | undefined;
-function cachedDirectory(cache: Cache): Promise<RoomLookupResponse | null> {
+let directoryPromise: Promise<OfflineDirectory | null> | undefined;
+function cachedDirectory(cache: Cache): Promise<OfflineDirectory | null> {
   directoryPromise ??= (async () => {
     const response = await cache.match('/api/offline-rooms');
     const data = await readDirectory(response);
@@ -221,12 +222,11 @@ function restoreDirectory(): Promise<void> {
 async function offlineLookup(url: URL): Promise<Response> {
   const input = url.searchParams.get('q')?.trim() ?? '';
   if (!input) return Response.json({error: 'Enter a room number or room alias.'}, {status: 400});
-  let data: RoomLookupResponse | null = null;
+  let data: OfflineDirectory | null = null;
   try { data = await cachedDirectory(await caches.open(publicCache)); }
   catch { /* Missing or inaccessible storage uses the same recovery message. */ }
   if (!data) return unavailable('The offline classroom directory is unavailable. Reconnect to download it again.');
-  return Response.json({rooms: findRoomMatches(data.rooms, input), map_size: data.map_size,
-    map_revision: data.map_revision, map_revision_date: data.map_revision_date}, {
+  return Response.json({rooms: findRoomMatches(data.rooms, input), map_size: data.map_size}, {
     headers: {'Cache-Control': 'no-store', 'X-GunnMap-Offline': '1'},
   });
 }
@@ -238,12 +238,6 @@ async function handle(request: Request, event: FetchEvent): Promise<Response> {
     catch {
       return unavailable('Map generation needs a connection. You can still view maps saved offline.');
     }
-  }
-  if (request.method === 'HEAD' && GENERATED_IMAGE.test(url.pathname)) {
-    const saved = await savedImage(url.pathname);
-    if (saved) return new Response(null, {status: 200, headers: saved.headers});
-    try {return await networkFetch(request, NETWORK_GET_TIMEOUT_MS);}
-    catch {return unavailable('This map was not saved offline. Reconnect to download it.');}
   }
   if (request.method !== 'GET') return networkFetch(request);
   if (GENERATED_IMAGE.test(url.pathname)) {
@@ -267,11 +261,6 @@ async function handle(request: Request, event: FetchEvent): Promise<Response> {
     catch { return offlineLookup(url); }
   }
   const cache = await caches.open(publicCache);
-  // Retain old links without keeping a second byte-identical map in each release.
-  if (url.pathname === '/evacuation-map.webp' && !url.search) {
-    const map = await cache.match('/map.webp');
-    if (map) return map;
-  }
   if (request.mode === 'navigate' && appRoute(url.pathname)) {
     // Serve a shell and scripts from the same build until an update is activated.
     const shell = await cache.match('/');

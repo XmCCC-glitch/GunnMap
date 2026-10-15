@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import Panzoom from "@panzoom/panzoom/dist/panzoom.es.js";
+import Panzoom from "@panzoom/panzoom";
 import { setBoundedImageTransform } from "./map-pan-bounds.js";
 import { handleMapKeydown } from "./map-keyboard.js";
 
@@ -110,6 +110,7 @@ export function usePanzoom(
     else mapImage.addEventListener("load", initialize, { once: true });
     resizeObserver = new ResizeObserver(() => {
       if (!mapImage.naturalWidth) return;
+      if (fit) destroyPanzoom();
       initialize();
     });
     resizeObserver.observe(viewport);
