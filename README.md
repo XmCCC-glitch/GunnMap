@@ -42,14 +42,11 @@ Drafts and templates are stored in browser cookies on this device; GunnMap has n
 
 ### Optional Infinite Campus connection
 
-The separate local `infinite-campus-mcp` companion service can fill active periods for a selected date. With that project installed as a sibling directory, start it in another terminal:
+The schedule page provides an **Import into GunnWatt** bookmark. Drag it to your bookmarks bar once. Sign in to the official Campus Student website, then click the saved bookmark. It reads your schedule and calendar on that page and opens GunnMap with the reduced import saved in this browser. Later visits and date changes use that local copy. Click the bookmark again when your classes or responsive sessions change.
 
-```sh
-cd ../infinite-campus-mcp
-.venv/bin/python server.py --http
-```
+The import includes all available terms. PRIME, SELF, and Study Hall remain separate editable choices. No Python service, remote sync backend, extension installation or developer mode is needed for the bookmark route. Student data is transferred directly between the two tabs using a checked `postMessage` handshake; URLs contain only a random request ID. Keep both tabs open until the import finishes. If popups are blocked, the portal shows a **Continue to GunnWatt** button. Clearing site data removes the bookmark import.
 
-Return to GunnMap at `http://127.0.0.1:8000/` and choose **Connect Infinite Campus**. The companion opens the official school sign-in page and serves period JSON from `127.0.0.1:8765`; its session stays on your device. PRIME, SELF, and Study Hall remain separate editable choices. The connector accepts the local 8000 origin and the Pages origin; another local port needs a matching connector change. Manual schedule entry works without the companion.
+The [GunnWatt Campus Connector](extension/README.md) remains an optional desktop Chrome/Edge extension. The website offers its ZIP download, and `npm run build:extension` builds it from source. Manual schedule entry also works. The bookmark route is verified in Chromium; Safari/iPad script-bookmark behavior is not yet verified, and managed devices may restrict it.
 
 ### Offline and GitHub Pages
 

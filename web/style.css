@@ -49,6 +49,16 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .campus-sync p, .campus-sync-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .campus-sync-heading .primary-button { min-height: 38px; padding: 8px 12px; font-size: 12px; }
 .campus-sync-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; font-size: 12px; }
+.campus-install { margin-top: 12px; font-size: 12px; line-height: 1.65; }
+.campus-install summary { cursor: pointer; font-weight: 600; }
+.campus-install ol { padding-left: 20px; }
+.campus-install li + li { margin-top: 6px; }
+.campus-bookmark-setup { font-size: 12px; line-height: 1.65; }
+.campus-bookmark-setup ol { padding-left: 20px; }
+.campus-bookmark-setup li + li { margin-top: 10px; }
+.campus-bookmark-setup summary { cursor: pointer; }
+.campus-bookmark-button { display: inline-block; padding: 5px 10px; margin: 3px; border: 1px dashed #ee927d; border-radius: 5px; color: #ffd6c9; cursor: grab; font-weight: 600; }
+.campus-bookmark-setup textarea { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 8px; color: #fff; background: var(--field); border: 1px solid var(--border); border-radius: 5px; overflow-wrap: anywhere; }
 .campus-sync-controls input, .campus-course-choice select { min-height: 36px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; color: #fff; background: var(--field); }
 .no-class-day { margin: 18px 0; padding: 44px 20px; border: 1px solid var(--border); border-radius: 8px; background: #2d2e33; text-align: center; }
 .no-class-day h3 { margin: 0; color: #f4d8cd; font-size: clamp(18px, 4vw, 25px); line-height: 1.4; }

@@ -1,52 +1,8 @@
 import type { Period } from "./types.js";
+import type { CampusCalendar, CampusPeriods, CampusPlacement } from "../../../../src/domain/campus-contract.js";
+export type { CampusCalendar, CampusPeriods, CampusPlacement } from "../../../../src/domain/campus-contract.js";
 
-export const CAMPUS_BRIDGE = "http://127.0.0.1:8765";
 export const CAMPUS_RESPONSIVE_URL = "https://pausdca.infinitecampus.org/campus/nav-wrapper/student/portal/student/responsive-schedule?appName=paloalto";
-
-export interface CampusPlacement {
-  course: string | null;
-  course_number: string | null;
-  section: string | null;
-  room: string | null;
-  teacher: string | null;
-  period: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  term: string | null;
-  schedule_name: string | null;
-  course_start: string | null;
-  course_end: string | null;
-}
-
-export interface CampusPeriods {
-  term: string;
-  as_of: string;
-  terms: string[];
-  schedules: string[];
-  periods: CampusPlacement[];
-  calendar?: CampusCalendar | null;
-}
-
-export interface CampusCalendar {
-  start_date: string;
-  end_date: string;
-  school_days: string[];
-  no_school_days: string[];
-}
-
-export async function fetchCampusPeriods(): Promise<CampusPeriods> {
-  const response = await fetch(`${CAMPUS_BRIDGE}/api/periods`, {
-    mode: "cors", credentials: "omit", cache: "no-store",
-  });
-  if (!response.ok) throw new Error(response.status === 401
-    ? "Sign in through the local Infinite Campus connector."
-    : `Connector returned HTTP ${response.status}.`);
-  const value: unknown = await response.json();
-  if (!value || typeof value !== "object" || !Array.isArray((value as CampusPeriods).periods)) {
-    throw new Error("The connector returned an invalid period JSON response.");
-  }
-  return value as CampusPeriods;
-}
 
 export function schoolDate(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "America/Los_Angeles" });
@@ -57,21 +13,25 @@ export function activeOn(row: CampusPlacement, date: string): boolean {
     && (!row.course_end || row.course_end.slice(0, 10) >= date);
 }
 
-export function scheduleForDate(date: string): string {
+export function scheduleForDate(date: string, data?: CampusPeriods): string {
+  const confirmed = data?.calendar?.schedules_by_date?.[date];
+  if (confirmed) return confirmed;
   const weekday = new Date(`${date}T12:00:00`).getDay();
   return ["Full", "M", "T", "W", "R", "F", "Full"][weekday];
 }
 
 export function isNoClassDate(calendar: CampusCalendar | null | undefined, date: string): boolean {
+  if (calendar?.school_days.includes(date)) return false;
+  if (calendar?.no_school_days.includes(date)) return true;
   const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 0 || weekday === 6) return true;
-  if (!calendar) return false;
-  if (calendar.school_days.includes(date)) return false;
-  return calendar.no_school_days.includes(date)
-    || (calendar.start_date <= date && date <= calendar.end_date);
+  return weekday === 0 || weekday === 6;
 }
 
-export function visibleNumericPeriods(date: string): number[] {
+export function visibleNumericPeriods(date: string, data?: CampusPeriods): number[] {
+  if (data?.calendar?.schedules_by_date?.[date]) {
+    return [...new Set(placementsForDate(data, date).map(row => Number(row.period))
+      .filter(number => Number.isInteger(number) && number >= 1 && number <= 7))].sort((a, b) => a - b);
+  }
   const day = scheduleForDate(date);
   if (day === "T" || day === "R") return [1, 2, 3, 4];
   if (day === "W" || day === "F") return [5, 6, 7];
@@ -79,7 +39,7 @@ export function visibleNumericPeriods(date: string): number[] {
 }
 
 export function placementsForDate(data: CampusPeriods, date: string): CampusPlacement[] {
-  const day = scheduleForDate(date);
+  const day = scheduleForDate(date, data);
   const rows = data.periods.filter(row => row.schedule_name === day && activeOn(row, date));
   const seen = new Set<string>();
   return rows.filter(row => {
@@ -98,13 +58,13 @@ export function responsivePlacements(rows: CampusPlacement[]): CampusPlacement[]
   return rows.filter(row => /^(?:PRIME\b|SELF\b|SH\b|STUDY\s*HALL\b)/i.test(row.period?.trim() ?? ""));
 }
 
-export function needsFridayStudyHall(date: string, rows: CampusPlacement[]): boolean {
-  return scheduleForDate(date) === "F" && !responsivePlacements(rows).some(row =>
+export function needsFridayStudyHall(date: string, rows: CampusPlacement[], data?: CampusPeriods): boolean {
+  return scheduleForDate(date, data) === "F" && !responsivePlacements(rows).some(row =>
     /^(?:SH\b|STUDY\s*HALL\b)/i.test(row.period?.trim() ?? ""));
 }
 
-export function needsWednesdayPrime(date: string, rows: CampusPlacement[]): boolean {
-  return scheduleForDate(date) === "W" && !responsivePlacements(rows).some(row =>
+export function needsWednesdayPrime(date: string, rows: CampusPlacement[], data?: CampusPeriods): boolean {
+  return scheduleForDate(date, data) === "W" && !responsivePlacements(rows).some(row =>
     /^PRIME\b/i.test(row.period?.trim() ?? ""));
 }
 

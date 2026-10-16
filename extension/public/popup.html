@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GunnWatt Campus Connector</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><img src="icon-48.png" alt="" width="40" height="40"><div><h1>GunnWatt</h1><p>Campus Connector</p></div></header>
+  <p id="status" role="status">Checking saved schedule…</p>
+  <p id="details" class="muted"></p>
+  <button id="connect" type="button">Connect Infinite Campus</button>
+  <button id="cancel" type="button" class="secondary" hidden>Cancel import</button>
+  <div class="actions">
+    <a href="https://xmccc-glitch.github.io/GunnMap/" target="_blank" rel="noopener noreferrer">Open GunnWatt ↗</a>
+    <button id="download" type="button" class="link" hidden>Export schedule</button>
+    <button id="forget" type="button" class="link" hidden>Forget saved import</button>
+  </div>
+  <p class="privacy">Sign in on the official school page. Your schedule stays in this browser profile. Update it when your classes change.</p>
+  <script src="popup.js" defer></script>
+</body>
+</html>

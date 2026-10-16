@@ -170,6 +170,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
         '/sw.js': ['dist/web/sw.js', 'text/javascript; charset=utf-8'],
         '/style.css': ['web/style.css', 'text/css; charset=utf-8'],
         '/ui.css': ['dist/web/ui.css', 'text/css; charset=utf-8'],
+        '/campus-connector.zip': ['dist/gunnwatt-campus-connector.zip', 'application/zip'],
         '/manifest.webmanifest': ['web/manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
         '/icon.svg': ['web/icon.svg', 'image/svg+xml'],
         '/apple-touch-icon.png': ['web/apple-touch-icon.png', 'image/png'],
