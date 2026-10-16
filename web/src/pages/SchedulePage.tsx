@@ -20,11 +20,12 @@ import { useToast } from "../shared/toast.js";
 import { findRoomMatches } from "../../../src/domain/room-matching.js";
 import { isPages } from "../features/pages/site-data.js";
 import {
-  CAMPUS_BRIDGE, CAMPUS_RESPONSIVE_URL, fetchCampusPeriods, isNoClassDate, mapFromCampus,
+  CAMPUS_RESPONSIVE_URL, isNoClassDate, mapFromCampus,
   needsFridayStudyHall, needsWednesdayPrime, numericCandidates, placementsForDate,
   responsiveColor, responsivePlacements, schoolDate, visibleNumericPeriods,
 } from "../features/schedule/campus-sync.js";
-import type { CampusPeriods, CampusPlacement } from "../features/schedule/campus-sync.js";
+import type { CampusPlacement } from "../features/schedule/campus-sync.js";
+import { useCampusConnection } from "../features/schedule/useCampusConnection.js";
 
 const EMPTY_ROOMS: RoomData["rooms"] = [];
 const EMPTY_BUILDINGS: string[] = [];
@@ -33,10 +34,9 @@ export function SchedulePage() {
   const showToast = useToast();
   const [directory, setDirectory] = useState<RoomData | null>(null);
   const [sharedPeriods, setSharedPeriods] = useState<Period[] | null>(null);
-  const [campusData, setCampusData] = useState<CampusPeriods | null>(null);
-  const [campusStatus, setCampusStatus] = useState("Checking local connector…");
+  const campus = useCampusConnection();
+  const campusData = campus.saved?.data ?? null;
   const [campusDate, setCampusDate] = useState(schoolDate);
-  const [campusUpdatedAt, setCampusUpdatedAt] = useState("");
   const [responsivePeriods, setResponsivePeriods] = useState<ResponsivePeriod[]>([]);
   const [generatedImage, setGeneratedImage] = useState(savedImagePath);
   const editorForm = useRef<HTMLFormElement>(null);
@@ -48,6 +48,7 @@ export function SchedulePage() {
   }, [render.invalidate]);
   const editor = useScheduleEditor(directory, invalidateGenerated, showToast);
   const editorRef = useRef(editor);
+  const hadCampusData = useRef(false);
   editorRef.current = editor;
   const roomsLoaded = directory !== null;
   const rooms = directory?.rooms ?? EMPTY_ROOMS;
@@ -55,42 +56,19 @@ export function SchedulePage() {
   const requiresReview = editor.review.length > 0;
   const noClassToday = Boolean(campusData && !editor.sharedPreview && isNoClassDate(campusData.calendar, campusDate));
   const visibleNumbers = noClassToday ? [] : campusData && !editor.sharedPreview
-    ? visibleNumericPeriods(campusDate) : [1, 2, 3, 4, 5, 6, 7];
+    ? visibleNumericPeriods(campusDate, campusData) : [1, 2, 3, 4, 5, 6, 7];
   const campusRows = campusData && !noClassToday ? placementsForDate(campusData, campusDate) : [];
 
   useEffect(() => {
-    let active = true;
-    let pending = false;
-    async function update() {
-      if (pending) return;
-      pending = true;
-      try {
-        const result = await fetchCampusPeriods();
-        if (!active) return;
-        setCampusData(result);
-        setCampusStatus("Connected");
-        setCampusUpdatedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-      } catch (error) {
-        if (!active) return;
-        setCampusStatus(error instanceof TypeError
-          ? "Local connector unavailable. Start it to sync your schedule."
-          : error instanceof Error ? error.message : "Campus sync failed.");
-      } finally { pending = false; }
+    if (!campusData || !directory || editorRef.current.sharedPreview) {
+      if (!campusData && hadCampusData.current) {
+        hadCampusData.current = false;
+        invalidateGenerated();
+      }
+      setResponsivePeriods([]);
+      return;
     }
-    const focused = () => { void update(); };
-    const visible = () => { if (document.visibilityState === "visible") void update(); };
-    void update();
-    window.addEventListener("focus", focused);
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      active = false;
-      window.removeEventListener("focus", focused);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!campusData || !directory || editorRef.current.sharedPreview) return;
+    hadCampusData.current = true;
     if (isNoClassDate(campusData.calendar, campusDate)) {
       setResponsivePeriods([]);
       invalidateGenerated();
@@ -202,11 +180,25 @@ export function SchedulePage() {
             <div className="campus-sync-heading">
               <div>
                 <h3 id="campus-sync-title">Infinite Campus</h3>
-                <p role="status">{campusStatus}{campusData ? ` · ${campusData.term} · updated ${campusUpdatedAt}` : ""}</p>
+                <p role="status">{campus.message}{campus.saved ? ` · imported ${new Date(campus.saved.imported_at).toLocaleDateString()}` : ""}</p>
               </div>
-              <button type="button" className="primary-button" onClick={() => window.open(`${CAMPUS_BRIDGE}/connect`, "_blank", "noopener")}>
-                Connect Infinite Campus
+              <button type="button" className="primary-button" disabled={!campus.available || campus.busy} onClick={() => { void campus.connect(); }}>
+                {campusData ? "Update saved schedule" : "Connect Infinite Campus"}
               </button>
+            </div>
+            <p>Connect once, then use your saved schedule. Update it when your classes change.</p>
+            {campus.available === false && <details className="campus-install" open>
+              <summary>Install the Campus connector</summary>
+              <ol>
+                <li><a className="download-link" href={isPages ? `${import.meta.env.BASE_URL}campus-connector.zip` : "/campus-connector.zip"} download>Download the connector ZIP</a> and unzip it.</li>
+                <li>In Chrome or Edge, open Extensions, enable Developer mode, and choose Load unpacked. Select the unzipped folder containing manifest.json.</li>
+                <li>Reload this page, then connect using the official school sign-in page.</li>
+              </ol>
+              <p>This version supports desktop Chrome and Edge. Safari and iPad packaging is separate.</p>
+            </details>}
+            <div className="campus-sync-controls">
+              {campus.busy && <button type="button" className="download-link" onClick={() => { void campus.cancel(); }}>Cancel import</button>}
+              {campusData && <button type="button" className="download-link" onClick={() => { void campus.forget(); }}>Forget Campus import</button>}
             </div>
             {campusData && <>
               <div className="campus-sync-controls">
@@ -307,7 +299,7 @@ export function SchedulePage() {
             </div>
             </>}
             {campusData && <div className="campus-json-action">
-              <button type="button" className="download-link" onClick={downloadCampusJson}>Download period JSON</button>
+              <button type="button" className="download-link" onClick={downloadCampusJson}>Export saved schedule</button>
             </div>}
           </form>
         </section>

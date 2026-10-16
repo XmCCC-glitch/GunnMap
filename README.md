@@ -42,14 +42,9 @@ Drafts and templates are stored in browser cookies on this device; GunnMap has n
 
 ### Optional Infinite Campus connection
 
-The separate local `infinite-campus-mcp` companion service can fill active periods for a selected date. With that project installed as a sibling directory, start it in another terminal:
+Install the [GunnWatt Campus Connector](extension/README.md) in desktop Chrome or Edge, then choose **Connect Infinite Campus**. Sign in on the official school page. The extension reads the schedule and calendar on your device and stores a reduced import in this browser profile. GunnMap reads that saved copy on later visits; use **Update saved schedule** when your classes or responsive sessions change.
 
-```sh
-cd ../infinite-campus-mcp
-.venv/bin/python server.py --http
-```
-
-Return to GunnMap at `http://127.0.0.1:8000/` and choose **Connect Infinite Campus**. The companion opens the official school sign-in page and serves period JSON from `127.0.0.1:8765`; its session stays on your device. PRIME, SELF, and Study Hall remain separate editable choices. The connector accepts the local 8000 origin and the Pages origin; another local port needs a matching connector change. Manual schedule entry works without the companion.
+The import includes all available terms. PRIME, SELF, and Study Hall remain separate editable choices. The connector requires no Python service or remote sync backend. The website offers the ZIP download, and `npm run build:extension` builds it from source. Manual schedule entry works without the extension. Safari/iPad packaging is a separate distribution target.
 
 ### Offline and GitHub Pages
 

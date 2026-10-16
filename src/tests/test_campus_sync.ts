@@ -62,7 +62,7 @@ test("Campus calendar hides weekends and non-school weekdays without guessing ou
   assert.equal(isNoClassDate(calendar, "2026-10-10"), true);
   assert.equal(isNoClassDate(calendar, "2026-10-12"), false);
   assert.equal(isNoClassDate(calendar, "2026-11-11"), true);
-  assert.equal(isNoClassDate(calendar, "2026-11-23"), true);
+  assert.equal(isNoClassDate(calendar, "2026-11-23"), false, "missing calendar rows do not confirm a weekday holiday");
   assert.equal(isNoClassDate(calendar, "2027-07-05"), false);
   assert.equal(isNoClassDate(null, "2026-11-11"), false);
   assert.equal(isNoClassDate(null, "2026-10-10"), true);
