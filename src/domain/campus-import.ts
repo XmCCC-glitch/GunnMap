@@ -31,6 +31,16 @@ export function schoolDate(now = new Date()): string {
   return now.toLocaleDateString("sv-SE", { timeZone: "America/Los_Angeles" });
 }
 
+/** Collection and projection must use the same enrollment's calendar. */
+export function campusStructure(roster: unknown): number | null {
+  if (!Array.isArray(roster)) return null;
+  for (const entry of roster) {
+    if (isRecord(entry) && Array.isArray(entry.sectionPlacements) && entry.sectionPlacements.length
+      && typeof entry.structureID === "number" && Number.isSafeInteger(entry.structureID)) return entry.structureID;
+  }
+  return null;
+}
+
 function calendarFrom(
   instructionalDays: unknown, dayEvents: unknown, structure: number,
   scheduleNames: Map<string, string>,
@@ -75,10 +85,9 @@ export function buildCampusPeriods(
   if (!Array.isArray(roster) || roster.length > 2000) throw new Error("Campus returned an invalid roster.");
   const periods: CampusPlacement[] = [];
   const scheduleNames = new Map<string, string>();
-  let structure: number | null = null;
+  const structure = campusStructure(roster);
   for (const entry of roster) {
     if (!isRecord(entry) || !Array.isArray(entry.sectionPlacements)) continue;
-    if (structure === null && typeof entry.structureID === "number") structure = entry.structureID;
     if (entry.sectionPlacements.length > 2000) throw new Error("Campus returned too many placements.");
     for (const placement of entry.sectionPlacements) {
       if (!isRecord(placement)) continue;

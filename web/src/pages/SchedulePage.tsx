@@ -26,6 +26,8 @@ import {
 } from "../features/schedule/campus-sync.js";
 import type { CampusPlacement } from "../features/schedule/campus-sync.js";
 import { useCampusConnection } from "../features/schedule/useCampusConnection.js";
+import { CampusBookmarkSetup } from "../features/schedule/CampusBookmarkSetup.js";
+import { CAMPUS_LOGIN_URL } from "../../../src/domain/campus-contract.js";
 
 const EMPTY_ROOMS: RoomData["rooms"] = [];
 const EMPTY_BUILDINGS: string[] = [];
@@ -89,11 +91,11 @@ export function SchedulePage() {
         color: responsiveColor(row.period),
       };
     });
-    if (needsFridayStudyHall(campusDate, rows)) responsive.push({
+    if (needsFridayStudyHall(campusDate, rows, campusData)) responsive.push({
       name: "Study Hall", course: "", startTime: null, endTime: null,
       room: "", building: "", color: responsiveColor("Study Hall"), placeholder: true,
     });
-    if (needsWednesdayPrime(campusDate, rows)) responsive.push({
+    if (needsWednesdayPrime(campusDate, rows, campusData)) responsive.push({
       name: "PRIME", course: "", startTime: null, endTime: null,
       room: "", building: "", color: responsiveColor("PRIME"), placeholder: true,
     });
@@ -182,13 +184,14 @@ export function SchedulePage() {
                 <h3 id="campus-sync-title">Infinite Campus</h3>
                 <p role="status">{campus.message}{campus.saved ? ` · imported ${new Date(campus.saved.imported_at).toLocaleDateString()}` : ""}</p>
               </div>
-              <button type="button" className="primary-button" disabled={!campus.available || campus.busy} onClick={() => { void campus.connect(); }}>
+              {campus.available ? <button type="button" className="primary-button" disabled={campus.busy} onClick={() => { void campus.connect(); }}>
                 {campusData ? "Update saved schedule" : "Connect Infinite Campus"}
-              </button>
+              </button> : <a className="primary-button" href={CAMPUS_LOGIN_URL} target="_blank" rel="noopener noreferrer">Open Campus Student ↗</a>}
             </div>
-            <p>Connect once, then use your saved schedule. Update it when your classes change.</p>
-            {campus.available === false && <details className="campus-install" open>
-              <summary>Install the Campus connector</summary>
+            {campus.available ? <p>Connect once, then use your saved schedule. Update it when your classes change.</p>
+              : <CampusBookmarkSetup hasImport={Boolean(campusData)} />}
+            {campus.available === false && <details className="campus-install">
+              <summary>Optional: use a Chrome / Edge extension</summary>
               <ol>
                 <li><a className="download-link" href={isPages ? `${import.meta.env.BASE_URL}campus-connector.zip` : "/campus-connector.zip"} download>Download the connector ZIP</a> and unzip it.</li>
                 <li>In Chrome or Edge, open Extensions, enable Developer mode, and choose Load unpacked. Select the unzipped folder containing manifest.json.</li>

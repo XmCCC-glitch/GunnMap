@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildCampusPeriods, campusDate } from "../domain/campus-import.js";
+import { buildCampusPeriods, campusDate, campusStructure } from "../domain/campus-import.js";
 import { isAppUrl, isCampusUrl, parseCampusPeriods, parseSavedCampusImport } from "../domain/campus-contract.js";
-import { isNoClassDate, placementsForDate, visibleNumericPeriods } from "../../web/src/features/schedule/campus-sync.js";
+import { isNoClassDate, needsFridayStudyHall, needsWednesdayPrime, placementsForDate, visibleNumericPeriods } from "../../web/src/features/schedule/campus-sync.js";
 import { campusRoster, campusDays, campusEvents } from "./fixtures/campus.js";
 
 const now = new Date("2026-10-15T18:00:00Z");
@@ -37,7 +37,18 @@ test("confirmed calendar schedules win over weekday assumptions and gaps do not 
   data.calendar!.schedules_by_date!["2026-10-16"] = "R";
   assert.deepEqual(placementsForDate(data, "2026-10-16").map(row => row.period), ["1", "2"]);
   assert.deepEqual(visibleNumericPeriods("2026-10-16", data), [1, 2]);
+  assert.equal(needsFridayStudyHall("2026-10-16", placementsForDate(data, "2026-10-16"), data), false);
+  data.calendar!.schedules_by_date!["2026-10-15"] = "W";
+  assert.equal(needsWednesdayPrime("2026-10-15", [], data), true);
   assert.equal(buildCampusPeriods(campusRoster, [], campusEvents, now).calendar, null);
+});
+
+test("calendar collection skips a different enrollment without scheduled placements", () => {
+  const roster = [{ structureID: 999, sectionPlacements: [] }, { structureID: 888 }, ...campusRoster];
+  assert.equal(campusStructure(roster), 42);
+  const data = buildCampusPeriods(roster, campusDays, campusEvents, now);
+  assert.deepEqual(data.calendar?.no_school_days, ["2026-11-11"]);
+  assert.equal(data.calendar?.schedules_by_date?.["2026-10-15"], "R");
 });
 
 test("malformed, oversized and impossible payloads fail before replacing saved data", () => {

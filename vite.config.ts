@@ -1,10 +1,19 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { buildCampusBookmarklet } from "./src/build_campus_bookmarklet.js";
 
 export default defineConfig({
   base: process.env.VITE_PAGES === "true" ? "/GunnMap/" : "/",
-  plugins: [react()],
+  plugins: [react(), {
+    name: "campus-bookmarklet",
+    resolveId(id) { if (id === "virtual:campus-bookmarklet") return "\0campus-bookmarklet"; },
+    async load(id) {
+      if (id !== "\0campus-bookmarklet") return;
+      const template = await buildCampusBookmarklet("GUNNWATT_RETURN_URL");
+      return `export default url => ${JSON.stringify(template)}.replaceAll("GUNNWATT_RETURN_URL", encodeURIComponent(url));`;
+    },
+  }],
   build: {
     outDir: "dist/web",
     emptyOutDir: true,

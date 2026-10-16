@@ -1,6 +1,6 @@
 # GunnWatt Campus Connector
 
-Import an Infinite Campus schedule through the official student portal, then use the saved import on this device. This version supports desktop Chrome and Edge.
+Import an Infinite Campus schedule through the official student portal, then use the saved import on this device. This optional extension supports desktop Chrome and Edge. The website now offers an install-free **Import into GunnWatt** bookmark as its default connection method; use that when extension setup is inconvenient.
 
 ## Install
 
@@ -41,7 +41,7 @@ npm run build
 npm run test:extension:browser
 ```
 
-The browser test uses a disposable Chromium profile, a local static Pages build and synthetic IC responses. Install the test browser with `npx playwright install chromium`, or set `CAMPUS_BROWSER_PATH` to a compatible Chromium executable. The test covers import, browser restart, an expired remote session, offline date changes, failed updates, cancellation, origin/tab restrictions, and manual entry without the connector. Screenshots go to `output/playwright/`.
+The browser test uses a disposable Chromium profile, a local static Pages build and synthetic IC responses. Install the test browser with `npx playwright install chromium`, or set `CAMPUS_BROWSER_PATH` to a compatible Chromium executable. It covers extension import, browser restart, expired sessions, offline date changes, failed updates, cancellation, origin/tab restrictions, and manual entry. It also verifies the install-free bookmark handoff, persistence, popup fallback, rejection of unsolicited messages and cross-tab forgetting during an import. Screenshots go to `output/playwright/`.
 
 For a static development preview:
 

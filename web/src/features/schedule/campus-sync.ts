@@ -13,7 +13,9 @@ export function activeOn(row: CampusPlacement, date: string): boolean {
     && (!row.course_end || row.course_end.slice(0, 10) >= date);
 }
 
-export function scheduleForDate(date: string): string {
+export function scheduleForDate(date: string, data?: CampusPeriods): string {
+  const confirmed = data?.calendar?.schedules_by_date?.[date];
+  if (confirmed) return confirmed;
   const weekday = new Date(`${date}T12:00:00`).getDay();
   return ["Full", "M", "T", "W", "R", "F", "Full"][weekday];
 }
@@ -37,7 +39,7 @@ export function visibleNumericPeriods(date: string, data?: CampusPeriods): numbe
 }
 
 export function placementsForDate(data: CampusPeriods, date: string): CampusPlacement[] {
-  const day = data.calendar?.schedules_by_date?.[date] ?? scheduleForDate(date);
+  const day = scheduleForDate(date, data);
   const rows = data.periods.filter(row => row.schedule_name === day && activeOn(row, date));
   const seen = new Set<string>();
   return rows.filter(row => {
@@ -56,13 +58,13 @@ export function responsivePlacements(rows: CampusPlacement[]): CampusPlacement[]
   return rows.filter(row => /^(?:PRIME\b|SELF\b|SH\b|STUDY\s*HALL\b)/i.test(row.period?.trim() ?? ""));
 }
 
-export function needsFridayStudyHall(date: string, rows: CampusPlacement[]): boolean {
-  return scheduleForDate(date) === "F" && !responsivePlacements(rows).some(row =>
+export function needsFridayStudyHall(date: string, rows: CampusPlacement[], data?: CampusPeriods): boolean {
+  return scheduleForDate(date, data) === "F" && !responsivePlacements(rows).some(row =>
     /^(?:SH\b|STUDY\s*HALL\b)/i.test(row.period?.trim() ?? ""));
 }
 
-export function needsWednesdayPrime(date: string, rows: CampusPlacement[]): boolean {
-  return scheduleForDate(date) === "W" && !responsivePlacements(rows).some(row =>
+export function needsWednesdayPrime(date: string, rows: CampusPlacement[], data?: CampusPeriods): boolean {
+  return scheduleForDate(date, data) === "W" && !responsivePlacements(rows).some(row =>
     /^PRIME\b/i.test(row.period?.trim() ?? ""));
 }
 

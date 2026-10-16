@@ -191,18 +191,115 @@ try {
   context = null;
 
   // The same static website remains usable without an installed connector.
-  const browser = await chromium.launch({ executablePath: await executable(), headless: true });
+  const browser = await chromium.launch({ executablePath: await executable(), headless: true,
+    args: ["--host-resolver-rules=MAP pausdca.infinitecampus.org ~NOTFOUND, MAP xmccc-glitch.github.io ~NOTFOUND"] });
   try {
-    const manual = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const manualContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const manual = await manualContext.newPage();
     await manual.goto(appUrl);
-    await manual.getByText("Install the Campus connector", { exact: true }).waitFor();
+    await manual.getByText("Import into GunnWatt", { exact: true }).waitFor();
     await manual.locator("#period-1-room").fill("M3");
     await manual.getByRole("button", { name: "Generate Map", exact: false }).click();
     await manual.locator(".generated-map-result img").first().waitFor({ timeout: 30000 });
     await manual.screenshot({ path: join(output, "campus-extension-manual-mobile.png"), fullPage: true });
     console.log("PASS: disconnected manual schedule and narrow layout still generate a map");
+
+    const bookmarklet = await manual.locator(".campus-bookmark-button").getAttribute("href");
+    assert.ok(bookmarklet);
+    assert.ok(bookmarklet.startsWith("javascript:"));
+    assert.doesNotMatch(bookmarklet, /javascript%3Athrow/);
+    const ctx = manual.context();
+    let bookmarkReads = 0;
+    let bookmarkMode: "ready" | "expired" | "delayed" = "ready";
+    let unblock: (() => void) | undefined;
+    let began: (() => void) | undefined;
+    let latestBookmarkRequestId = "";
+    ctx.on("request", request => {
+      const id = new URL(request.url()).searchParams.get("campus-import");
+      if (request.isNavigationRequest() && id) latestBookmarkRequestId = id;
+    });
+    await ctx.route("https://xmccc-glitch.github.io/**", async route => {
+      const url = new URL(route.request().url());
+      if (!url.pathname.startsWith("/GunnMap/")) { await route.abort(); return; }
+      const pathname = url.pathname.slice("/GunnMap".length);
+      const path = resolve(web, `.${pathname}${pathname.endsWith("/") ? "index.html" : ""}`);
+      if (!path.startsWith(web + sep)) { await route.abort(); return; }
+      try { await route.fulfill({ contentType: mime[extname(path)] ?? "application/octet-stream", body: await readFile(path) }); }
+      catch { await route.fulfill({ status: 404 }); }
+    });
+    await ctx.route(`${campusOrigin}/**`, async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/campus/student-test") {
+        await route.fulfill({ contentType: "text/html", body: "<!doctype html><h1>Synthetic Campus portal</h1>" });
+      } else if (url.pathname === "/campus/resources/portal/roster") {
+        bookmarkReads++;
+        if (bookmarkMode === "delayed") { began?.(); await new Promise<void>(done => { unblock = done; }); }
+        await route.fulfill({ status: bookmarkMode === "expired" ? 401 : 200,
+          contentType: "application/json", body: JSON.stringify(campusRoster) });
+      } else if (url.pathname === "/campus/resources/calendar/instructionalDay") {
+        assert.equal(url.searchParams.get("structureID"), "42");
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(campusDays) });
+      } else if (url.pathname === "/campus/resources/portal/dayEvent/byEnrollment") {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(campusEvents) });
+      } else await route.fulfill({ status: 404 });
+    });
+    const portal = await ctx.newPage();
+    await portal.goto(`${campusOrigin}/campus/student-test`);
+    const importedOpened = ctx.waitForEvent("page");
+    await portal.goto(bookmarklet!).catch(() => undefined);
+    const imported = await importedOpened;
+    await imported.locator(".campus-sync [role=status]").filter({ hasText: "Saved on this device" }).waitFor();
+    await imported.locator("#campus-date").fill("2026-10-15");
+    await imported.waitForFunction(() => document.querySelector<HTMLInputElement>("#period-1-room")?.value === "M-03");
+    assert.equal(new URL(imported.url()).search, "", "request ID is removed after opening the return tab");
+    const localSnapshot = await imported.evaluate(() => localStorage.getItem("gunnwatt_campus_import_v1"));
+    assert.ok(localSnapshot);
+    assert.doesNotMatch(localSnapshot!, /personID|rosterID|987654|Not exported/);
+    assert.equal(bookmarkReads, 1);
+    await imported.reload();
+    await imported.locator("#campus-date").fill("2027-01-07");
+    await imported.waitForFunction(() => document.querySelector<HTMLInputElement>("#period-1-room")?.value === "N-214");
+    assert.equal(bookmarkReads, 1, "reloading and changing semesters must use local storage");
+    await imported.screenshot({ path: join(output, "campus-bookmark-imported.png"), fullPage: true });
+    console.log("PASS: install-free bookmark transfers a projected import between tabs, persists and changes semesters locally");
+
+    bookmarkMode = "expired";
+    const expiredOpened = ctx.waitForEvent("page");
+    await portal.goto(bookmarklet!).catch(() => undefined);
+    const expired = await expiredOpened;
+    await expired.locator(".campus-sync [role=status]").filter({ hasText: "Sign in to Campus Student" }).waitFor();
+    assert.equal(await expired.evaluate(() => localStorage.getItem("gunnwatt_campus_import_v1")), localSnapshot);
+    console.log("PASS: an expired Campus session preserves the previous bookmark import");
+
+    bookmarkMode = "delayed";
+    const startedReading = new Promise<void>(done => { began = done; });
+    // Exercise the fallback used when the browser blocks an automatic popup.
+    await portal.evaluate(() => {
+      const open = window.open.bind(window);
+      let first = true;
+      window.open = (...args: Parameters<typeof window.open>) => { if (first) { first = false; return null; } return open(...args); };
+    });
+    await portal.goto(bookmarklet!).catch(() => undefined);
+    const pendingOpened = ctx.waitForEvent("page");
+    await portal.getByRole("button", { name: "Continue to GunnWatt" }).click();
+    const pending = await pendingOpened;
+    await startedReading;
+    await pending.getByRole("button", { name: "Cancel import" }).waitFor();
+    assert.ok(latestBookmarkRequestId);
+    await pending.evaluate(id => window.postMessage({ channel: "gunnwatt-campus-bookmark-v1", kind: "result", id, data: {} }, location.origin), latestBookmarkRequestId);
+    assert.equal(await pending.evaluate(() => localStorage.getItem("gunnwatt_campus_import_v1")), localSnapshot,
+      "a message sent by the app itself cannot replace a Campus import");
+    await imported.getByRole("button", { name: "Forget Campus import" }).click();
+    unblock?.();
+    await pending.waitForTimeout(600);
+    assert.equal(await pending.getByRole("button", { name: "Forget Campus import" }).count(), 0);
+    const forgotten = await pending.evaluate(() => JSON.parse(localStorage.getItem("gunnwatt_campus_import_v1")!));
+    assert.equal(forgotten.saved, null);
+    await pending.reload();
+    assert.equal(await pending.locator("#campus-date").count(), 0);
+    console.log("PASS: popup fallback works, unsolicited messages are rejected, and forgetting in another tab rejects an in-flight bookmark result");
   } finally { await browser.close(); }
-  console.log("Campus extension browser checks passed.");
+  console.log("Campus bookmark and extension browser checks passed.");
 } catch (error) {
   if (context) {
     for (const [index, page] of context.pages().entries()) {
