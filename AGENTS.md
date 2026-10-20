@@ -69,6 +69,12 @@ GunnMap/
 
 ## Verification
 
+- **因 agent 开发、QA、调试或部署检查进入网站而增加的计数不算在用户访问数内。用户委托 agent 阅读网站属于用户访问，应正常计数。** Do not exclude visits just because of an agent user-agent string or webdriver flag.
+- Before development/QA browsing, open `/GunnMap/?stats=off` in that browser profile. This persistently opts out. Localhost never records visits. Read-only `GET /visits` is safe for health checks.
+- If your development work accidentally records a visit, open `/GunnMap/?stats=undo` in the same profile to reverse the latest opening, or add `&visit=<visitId>` for a specific receipt created by this run. Repeated undo is idempotent. Never undo genuine user visits, reset the total, or subtract a guessed number. `/GunnMap/?stats=on` explicitly restores normal counting.
+- Non-browser agents can undo their own opening with `DELETE /visits/<visitId>` and its `undoToken`; see `visits/README.md`. Retain your receipt when deliberately testing a write and clean it up before finishing. Undo is available for 30 days; test with local data whenever possible.
+- Visit statistics live in `visits/` and `web/src/features/visits/`. Preserve atomic opening deduplication, receipt-scoped undo and tombstones. Run `npm run visits:types` after changing Worker bindings.
+
 - Run `npm run typecheck`, `npm test`, and `npm run build`.
 - `npm run dev` builds the browser modules before starting the TypeScript server. Run `npm run build:web` after browser source edits, or restart the development server. `npm start` uses the compiled server and requires `npm run build` first.
 - For rendering changes, generate a representative map including a repeated room and N214, and inspect the PNG and legend.

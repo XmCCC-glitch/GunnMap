@@ -265,6 +265,9 @@ wa-tooltip::part(content) { white-space: pre-line; }
 .map-help, .map-caption { margin-top: 12px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .site-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; max-width: 1680px; margin: 0 auto; padding: 4px clamp(24px, 3.2vw, 64px) 30px; color: #92929d; font-size: 10px; }
 .site-footer span span { margin: 0 5px; }
+.visit-counter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.visit-counter strong { color: #e4e4eb; font-variant-numeric: tabular-nums; }
+.visit-counter a { color: inherit; text-underline-offset: 3px; }
 
 .find-room-layout { display: grid; gap: 18px; }
 .find-room-search h1 { margin-top: 5px; font-size: clamp(23px, 2.5vw, 30px); letter-spacing: -.04em; }

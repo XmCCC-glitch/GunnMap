@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { OfflineStatus } from "../features/offline/OfflineStatus.js";
 import { isPages } from "../features/pages/site-data.js";
+import { VisitCounter } from "../features/visits/VisitCounter.js";
 
 const navigation = [
   { to: "/", title: "Schedule Map", icon: "campus" },
@@ -102,6 +103,7 @@ export function SiteShell() {
         <footer className="site-footer">
           <span>GunnMap <span aria-hidden="true">·</span> Henry M. Gunn High School</span>
           <span>Unofficial student resource</span>
+          {isPages && <VisitCounter />}
         </footer>
         <div ref={spacerRef} aria-hidden="true" className="brand-scroll-spacer" />
       </div>

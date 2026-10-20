@@ -36,6 +36,7 @@ await Promise.all([
   copyFile(resolve(ROOT, "src/map/gunn_site_map.png"), resolve(output, "map.png")),
   copyFile(resolve(ROOT, "src/map/gunn_site_map.png"), resolve(output, "evacuation-map.png")),
   writeFile(resolve(output, ".nojekyll"), ""),
+  writeFile(resolve(output, "AGENTS.md"), `# GunnMap visits for agents\n\nUser-requested agent reads count as user visits. Agent development, QA, debugging and deployment checks do not count.\n\nBefore development browsing, open /GunnMap/?stats=off in the same browser profile. If this run accidentally counted an opening, use /GunnMap/?stats=undo for its latest receipt or add &visit=<visitId> for a specific receipt. Never undo genuine user visits or reset the total. /GunnMap/?stats=on restores normal counting.\n\nCounter API: ${process.env.VITE_VISITS_API_URL || "not activated"}\nGET is read-only. Non-browser user-reading agents may POST JSON {visitId, undoToken} with two new UUID-v4 values per opening and Origin: https://xmccc-glitch.github.io. Retain the receipt; DELETE <API>/<visitId> with JSON {undoToken} reverses only that opening. Repeated writes and undo are idempotent. Undo is available for 30 days. Development agents must not POST user visits, except deliberate smoke tests that they subsequently undo.\n`),
 ]);
 
 const base = "/GunnMap/";
