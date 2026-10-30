@@ -30,19 +30,14 @@ export interface ScheduleEvacuationEntry {
   id: string;
   room: string;
   building: string;
+  floor: number | null;
   color: string;
   marker: [number, number] | null;
   evacuation: EvacuationInfo | null;
 }
 
-export interface ScheduleLookupResponse {
-  rooms: Array<{
-    id: string;
-    label: string;
-    building: string;
-    floor: number;
-    marker: [number, number];
-    evacuation: EvacuationInfo;
-  }>;
-  map_size: [number, number];
-}
+export type EntryWithMarker = ScheduleEvacuationEntry & {
+  marker: [number, number];
+};
+
+export type EvacuationMapMode = "reference" | "campus";

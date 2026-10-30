@@ -229,7 +229,7 @@ test('offline navigation, public assets and room lookup preserve geometry and ev
   assert.deepEqual(await (await h.fetch('/api/offline-rooms')).json(), directory);
   assert.equal(await (await h.fetch('/map.webp')).text(), 'compressed map');
   assert.equal(await (await h.fetch('/evacuation-map.webp')).text(), 'compressed map');
-  for (const query of ['n—214', 'Ｎ－２１４', 'R 148', 'library', 'K6', 'E01', 'unknown']) {
+  for (const query of ['n—214', 'Ｎ－２１４', 'R 148', 'library', 'K6', 'H1', 'M3', 'E01', 'E02', 'N200', 'N223', 'unknown']) {
     const response = await h.fetch(`/api/room-lookup?q=${encodeURIComponent(query)}`);
     assert.equal(response.status, 200, query);
     assert.equal(response.headers.get('X-GunnMap-Offline'), '1');
@@ -241,10 +241,23 @@ test('offline navigation, public assets and room lookup preserve geometry and ev
       assert.equal(result.rooms[0].floor, 2);
       assert.ok(result.rooms[0].polygon.length >= 3);
       assert.equal(result.rooms[0].marker.length, 2);
-      assert.equal(result.rooms[0].evacuation.group, null);
+      assert.equal(result.rooms[0].evacuation.group, 'black');
+      assert.equal(result.rooms[0].evacuation.reference_label, 'N201-N217');
+      assert.match(result.rooms[0].evacuation.note, /supplied, unverified older evacuation plan/);
+      assert.match(result.rooms[0].evacuation.note, /follow current school staff directions/i);
     }
-    if (query === 'K6') assert.deepEqual(result.rooms.map((room: {id: string}) => room.id), ['R070']);
-    if (query === 'E01') assert.equal(result.rooms[0].evacuation.status, 'unconfirmed');
+    if (query === 'K6') {
+      assert.deepEqual(result.rooms.map((room: {id: string}) => room.id), ['R070']);
+      assert.equal(result.rooms[0].evacuation.reference_label, 'K6-K13');
+    }
+    if (query === 'H1') assert.equal(result.rooms[0].evacuation.group, 'red');
+    if (query === 'M3') assert.equal(result.rooms[0].evacuation.group, 'blue');
+    if (query === 'library') assert.equal(result.rooms[0].evacuation.group, 'green');
+    if (['E01', 'E02', 'N200', 'N223'].includes(query)) {
+      assert.equal(result.rooms[0].evacuation.status, 'unconfirmed');
+      assert.equal(result.rooms[0].evacuation.group, null);
+      assert.equal(result.rooms[0].evacuation.focus, null);
+    }
   }
   assert.equal((await h.fetch('/api/room-lookup?q=%20')).status, 400);
   assert.equal(h.writes.length, writesBefore, 'lookup responses and navigation must not create new caches');
@@ -329,7 +342,7 @@ test('broken offline directories return 503, are discarded, and recover when a l
     h.offline();
     const recovered = await h.fetch('/api/room-lookup?q=N214');
     assert.equal(recovered.status, 200);
-    assert.equal((await recovered.json()).rooms[0].evacuation.group, null);
+    assert.equal((await recovered.json()).rooms[0].evacuation.group, 'black');
   }
 });
 

@@ -9,7 +9,7 @@ export async function buildDisplayMaps(root = process.cwd()): Promise<void> {
   await mkdir(output, { recursive: true });
   for (const [source, target] of [
     ['gunn_site_map.png', 'map.webp'],
-    ['gunn_site_map.png', 'evacuation-map.webp'],
+    ['gunn_evacuation_map.png', 'evacuation-map.webp'],
   ]) {
     const original = await readFile(resolve(root, 'src/map', source));
     const display = await sharp(original).webp({ lossless: true, effort: 6 }).toBuffer();

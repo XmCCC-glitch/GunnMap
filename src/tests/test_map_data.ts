@@ -53,24 +53,37 @@ test('repository data, inventory and actual PNG dimensions are consistent', () =
   assert.deepEqual(validateMapFiles(ROOT), {errors: [], warnings: []});
 });
 
-test('current site map provenance is exact and evacuation routes remain unavailable', () => {
-  const {provenance, routesAvailable, groups, validationIssues} = evacuationOverview();
-  assert.equal(provenance.sourceKind, 'official_site_map');
-  assert.equal(provenance.originalFilename, 'UpdatedGunncampusMap9-3-26.pdf');
-  assert.equal(provenance.sourceFile, 'src/map/gunn_site_map.png');
-  assert.deepEqual(provenance.imageSize, [2448, 1584]);
-  assert.equal(provenance.sourceRevisionDate, '2026-09-03');
+test('restored evacuation reference preserves its fingerprint and unverified provenance', () => {
+  const {provenance, routesAvailable, groups, inventoryExceptions, validationIssues} = evacuationOverview();
+  assert.equal(provenance.sourceKind, 'supplied_reference');
+  assert.equal(provenance.originalFilename, '截屏2026-09-23 上午9.00.56.png');
+  assert.equal(provenance.sourceFile, 'src/map/gunn_evacuation_map.png');
+  assert.equal(provenance.sourceImageSha256, 'e8160bb444213a239c0b8e6d73fe5661944a9c93a7af325ee56f5b6ff1583048');
+  assert.deepEqual(provenance.imageSize, [1852, 1156]);
+  assert.equal(provenance.sourceRevisionDate, null);
   assert.equal(provenance.verifiedOn, null);
-  assert.equal(routesAvailable, false);
-  assert.deepEqual(groups, {});
+  assert.equal(reference.routesAvailable, true, 'availability is explicit in the restored source');
+  assert.equal(routesAvailable, true);
+  assert.deepEqual(Object.keys(groups), ['red', 'blue', 'green', 'black']);
+  assert.equal(reference.ranges.length, 18);
+  assert.deepEqual(Object.keys(reference.exact), ['P105', 'P115', 'P117', 'S101', 'S102', 'S121', 'S147']);
+  assert.deepEqual(Object.keys(reference.whole), ['A', 'B', 'D', 'BG', 'TG']);
+  assert.deepEqual(Object.keys(inventoryExceptions), ['E1-E2', 'S147', 'TG']);
+  assert.match(inventoryExceptions['E1-E2'], /E01 and E02/);
+  for (const group of Object.values(groups)) assert.match(group.destination, /^Historical reference:/);
   assert.deepEqual(validationIssues, []);
   const mapped = evacuationForRoom({label: 'N214', building: 'N'});
-  assert.equal(mapped.status, 'unconfirmed');
-  assert.equal(mapped.reference_label, null);
-  assert.equal(mapped.focus, null);
-  const unresolved = evacuationForRoom({label: 'E01', building: 'E'});
-  assert.equal(unresolved.status, 'unconfirmed');
-  assert.equal(unresolved.focus, null);
+  assert.equal(mapped.status, 'mapped');
+  assert.equal(mapped.reference_label, 'N201-N217');
+  assert.notEqual(mapped.focus, null);
+  assert.match(mapped.note, /supplied, unverified older evacuation plan/);
+  assert.match(mapped.note, /follow current school staff directions/i);
+  for (const label of ['E01', 'E02', 'N200', 'N223']) {
+    const unresolved = evacuationForRoom({label, building: label[0]});
+    assert.equal(unresolved.status, 'unconfirmed', label);
+    assert.equal(unresolved.group, null, label);
+    assert.equal(unresolved.focus, null, label);
+  }
 });
 
 test('unavailable routes cannot silently retain historical assignments', () => {

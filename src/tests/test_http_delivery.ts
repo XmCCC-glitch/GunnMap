@@ -139,7 +139,9 @@ test('room lookup and offline inventory preserve the React SPA API contracts', a
       assert.equal(result.rooms.length, 1);
       assert.equal(result.rooms[0].id, 'R148');
       assert.equal(result.rooms[0].floor, 2);
-      assert.equal(result.rooms[0].evacuation.group, null);
+      assert.equal(result.rooms[0].evacuation.group, 'black');
+      assert.equal(result.rooms[0].evacuation.reference_label, 'N201-N217');
+      assert.match(result.rooms[0].evacuation.note, /unverified older/);
       assert.deepEqual(result.map_size, roomData.image_size);
       assert.deepEqual(result.rooms[0], offline.rooms.find((room: { id: string }) => room.id === 'R148'));
     }

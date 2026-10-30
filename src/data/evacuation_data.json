@@ -1,20 +1,443 @@
 {
-  "provenance": {
-    "sourceKind": "official_site_map",
-    "originalFilename": "UpdatedGunncampusMap9-3-26.pdf",
-    "sourceFile": "src/map/gunn_site_map.png",
-    "sourceImageSha256": "6a3f6460a3331fc0c8903f18aa4da88ce40887ac559ac6507ac8dfbda396da10",
-    "sourceRevisionDate": "2026-09-03",
-    "verifiedOn": null,
-    "imageSize": [
-      2448,
-      1584
+  "routesAvailable": true,
+  "ranges": [
+    [
+      "H",
+      1,
+      3,
+      "red",
+      "H1-H3",
+      [
+        404,
+        427,
+        489,
+        459
+      ]
+    ],
+    [
+      "H",
+      4,
+      5,
+      "red",
+      "H4-H5",
+      [
+        461,
+        456,
+        552,
+        487
+      ]
+    ],
+    [
+      "G",
+      1,
+      3,
+      "red",
+      "G1-G3",
+      [
+        460,
+        486,
+        552,
+        515
+      ]
+    ],
+    [
+      "G",
+      4,
+      7,
+      "red",
+      "G4-G7",
+      [
+        460,
+        512,
+        553,
+        543
+      ]
+    ],
+    [
+      "F",
+      1,
+      2,
+      "red",
+      "F1-F2",
+      [
+        478,
+        544,
+        560,
+        576
+      ]
+    ],
+    [
+      "F",
+      4,
+      6,
+      "red",
+      "F4-F6",
+      [
+        498,
+        585,
+        580,
+        618
+      ]
+    ],
+    [
+      "M",
+      1,
+      5,
+      "blue",
+      "M1-M5",
+      [
+        1078,
+        473,
+        1173,
+        505
+      ]
+    ],
+    [
+      "K",
+      1,
+      5,
+      "green",
+      "K-1-K5",
+      [
+        1298,
+        927,
+        1399,
+        954
+      ]
+    ],
+    [
+      "K",
+      6,
+      13,
+      "green",
+      "K6-K13",
+      [
+        1298,
+        953,
+        1399,
+        981
+      ]
+    ],
+    [
+      "L",
+      1,
+      4,
+      "green",
+      "L1-L4",
+      [
+        1306,
+        979,
+        1390,
+        1007
+      ]
+    ],
+    [
+      "L",
+      5,
+      8,
+      "green",
+      "L5-L8",
+      [
+        1306,
+        1004,
+        1390,
+        1033
+      ]
+    ],
+    [
+      "C",
+      1,
+      3,
+      "green",
+      "C-1-C3",
+      [
+        1298,
+        1028,
+        1400,
+        1058
+      ]
+    ],
+    [
+      "C",
+      4,
+      8,
+      "green",
+      "C-4-C8",
+      [
+        1144,
+        900,
+        1250,
+        934
+      ]
+    ],
+    [
+      "E",
+      1,
+      2,
+      "green",
+      "E1-E2",
+      [
+        1149,
+        871,
+        1245,
+        900
+      ]
+    ],
+    [
+      "J",
+      1,
+      5,
+      "black",
+      "J1 - J5",
+      [
+        1522,
+        380,
+        1663,
+        412
+      ]
+    ],
+    [
+      "J",
+      6,
+      10,
+      "black",
+      "J6- J10",
+      [
+        1554,
+        550,
+        1675,
+        583
+      ]
+    ],
+    [
+      "N",
+      101,
+      117,
+      "black",
+      "N101-N117",
+      [
+        1689,
+        550,
+        1818,
+        583
+      ]
+    ],
+    [
+      "N",
+      201,
+      217,
+      "black",
+      "N201-N217",
+      [
+        1696,
+        380,
+        1822,
+        412
+      ]
+    ]
+  ],
+  "exact": {
+    "P105": [
+      "blue",
+      "P-105, P-115, P-117",
+      [
+        1030,
+        508,
+        1285,
+        542
+      ]
+    ],
+    "P115": [
+      "blue",
+      "P-105, P-115, P-117",
+      [
+        1030,
+        508,
+        1285,
+        542
+      ]
+    ],
+    "P117": [
+      "blue",
+      "P-105, P-115, P-117",
+      [
+        1030,
+        508,
+        1285,
+        542
+      ]
+    ],
+    "S101": [
+      "blue",
+      "S-101, S-102, S-121",
+      [
+        1035,
+        544,
+        1213,
+        604
+      ]
+    ],
+    "S102": [
+      "blue",
+      "S-101, S-102, S-121",
+      [
+        1035,
+        544,
+        1213,
+        604
+      ]
+    ],
+    "S121": [
+      "blue",
+      "S-101, S-102, S-121",
+      [
+        1035,
+        544,
+        1213,
+        604
+      ]
+    ],
+    "S147": [
+      "blue",
+      "S-147",
+      [
+        1020,
+        608,
+        1105,
+        643
+      ]
     ]
   },
-  "routesAvailable": false,
-  "groups": {},
-  "inventoryExceptions": {},
-  "ranges": [],
-  "exact": {},
-  "whole": {}
+  "whole": {
+    "A": [
+      "green",
+      "A",
+      [
+        1176,
+        996,
+        1218,
+        1029
+      ]
+    ],
+    "B": [
+      "green",
+      "B",
+      [
+        1176,
+        964,
+        1218,
+        995
+      ]
+    ],
+    "D": [
+      "green",
+      "D",
+      [
+        1176,
+        932,
+        1218,
+        964
+      ]
+    ],
+    "BG": [
+      "green",
+      "Bow Gym",
+      [
+        1284,
+        877,
+        1410,
+        908
+      ]
+    ],
+    "TG": [
+      "green",
+      "Titan Gym",
+      [
+        1281,
+        904,
+        1418,
+        933
+      ]
+    ]
+  },
+  "provenance": {
+    "sourceKind": "supplied_reference",
+    "originalFilename": "截屏2026-09-23 上午9.00.56.png",
+    "sourceFile": "src/map/gunn_evacuation_map.png",
+    "sourceImageSha256": "e8160bb444213a239c0b8e6d73fe5661944a9c93a7af325ee56f5b6ff1583048",
+    "sourceRevisionDate": null,
+    "verifiedOn": null,
+    "imageSize": [
+      1852,
+      1156
+    ]
+  },
+  "groups": {
+    "red": {
+      "title": "Red markings",
+      "color": "#f53622",
+      "destination": "Historical reference: red markings beside PREP",
+      "shortDestination": "PREP",
+      "labels": [
+        "H1-H3",
+        "H4-H5",
+        "G1-G3",
+        "G4-G7",
+        "F1-F2",
+        "F4-F6",
+        "PREP"
+      ]
+    },
+    "blue": {
+      "title": "Blue markings",
+      "color": "#304ffe",
+      "destination": "Historical reference: blue markings beside Spangenberg Theater and the bike racks",
+      "shortDestination": "Spangenberg Theater / bike racks",
+      "labels": [
+        "M1-M5",
+        "P-105, P-115, P-117",
+        "S-101, S-102, S-121",
+        "S-147"
+      ]
+    },
+    "green": {
+      "title": "Green markings",
+      "color": "#527d32",
+      "destination": "Historical reference: green markings below Bow Gym / Titan Gym",
+      "shortDestination": "Bow Gym",
+      "labels": [
+        "K-1-K5",
+        "K6-K13",
+        "L1-L4",
+        "L5-L8",
+        "C-1-C3",
+        "C-4-C8",
+        "E1-E2",
+        "A",
+        "B",
+        "D",
+        "Bow Gym",
+        "Titan Gym"
+      ]
+    },
+    "black": {
+      "title": "Black markings",
+      "color": "#202529",
+      "destination": "Historical reference: black group labels on the football field",
+      "shortDestination": "Football field",
+      "appendReferenceLabel": true,
+      "description": "These group labels appear on the football field in the supplied older reference. They are not verified current evacuation instructions.",
+      "labels": [
+        "J1 - J5",
+        "J6- J10",
+        "N101-N117",
+        "N201-N217"
+      ]
+    }
+  },
+  "inventoryExceptions": {
+    "E1-E2": "The source labels E1-E2; the current E01 and E02 rooms have not been confirmed as either reference room.",
+    "S147": "S147 is a source-map group label, not an active searchable room.",
+    "TG": "Titan Gym is a reference area without selectable room geometry."
+  }
 }

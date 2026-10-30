@@ -31,6 +31,7 @@ export interface EvacuationData {
   whole: Record<string, Assignment>;
 }
 export interface Evacuation {
+  /** `mapped` means matched to the supplied reference, not verified current instructions. */
   status: 'mapped' | 'unconfirmed'; group: Group | null; color: string | null;
   destination: string; short_destination: string | null; reference_label: string | null; note: string;
   focus: {x:number; y:number; width:number; height:number} | null;
@@ -64,7 +65,7 @@ function mapped([group,reference_label,[left,top,right,bottom]]: Assignment): Ev
   const [imageWidth, imageHeight] = data.provenance.imageSize;
   return {status:'mapped',group,color:info.color,short_destination:info.shortDestination,reference_label,
     destination:info.destination+(info.appendReferenceLabel ? ` — section labeled ${reference_label}` : ''),
-    note:'Check the full reference map for the marked path to this assembly group.',
+    note:'Matched to the supplied, unverified older evacuation plan. These are historical reference markings; follow current school staff directions.',
     focus:{x:left/imageWidth,y:top/imageHeight,width:(right-left)/imageWidth,height:(bottom-top)/imageHeight}};
 }
 /** Only assign rooms explicitly supported by the supplied reference. */
@@ -91,7 +92,7 @@ export function evacuationForRoom(room: {label?:string; building?:string}): Evac
   }
   return {status:'unconfirmed',group:null,color:null,short_destination:null,reference_label:null,focus:null,
     destination:'Assembly area not confirmed for this room',
-    note: canonical === 'E01'
-      ? 'The supplied map labels E1-E2, while this classroom is labeled E01. Their correspondence is unconfirmed; confirm the location with school staff.'
-      : 'The supplied evacuation map does not clearly identify an assembly area for this room. Confirm the location with school staff.'};
+    note: /^E0[12]$/.test(canonical)
+      ? `The supplied older map labels E1-E2, while this classroom is labeled ${canonical}. Their correspondence is unconfirmed; follow current school staff directions.`
+      : 'The supplied, unverified older evacuation map does not explicitly identify a group for this room. Follow current school staff directions.'};
 }

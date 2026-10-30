@@ -10,6 +10,7 @@ import type {
 import { useToast } from "../shared/toast.js";
 import { loadRooms, lookupRoom, siteUrl } from "../features/pages/site-data.js";
 import type { CSSVariables } from "../shared/css-types.js";
+import { referenceCaution, referenceSummary } from "../features/evacuation/reference-display.js";
 
 export function FindRoomPage() {
   const showToast = useToast();
@@ -98,18 +99,6 @@ export function FindRoomPage() {
   };
 
   const evacuation = selectedRoom?.evacuation;
-  const reference = evacuation?.reference_label
-    && !/^[A-Z]$/i.test(evacuation.reference_label)
-    ? `${evacuation.reference_label} · `
-    : "";
-  const destinationName = evacuation?.short_destination
-    ?? evacuation?.destination
-    ?? "";
-  const destination = selectedRoom && evacuation
-    ? evacuation.status === "mapped"
-      ? `${selectedRoom.label} → ${reference}${destinationName} (${evacuation.group})`
-      : `${selectedRoom.label} → ${evacuation.destination}`
-    : "";
 
   const handleInputChange = (value: string) => {
     requestRevision.current += 1;
@@ -201,10 +190,12 @@ export function FindRoomPage() {
                 {selectedRoom.floor === 2 ? "2nd floor" : "1st floor"}
               </span>
             </div>
-            <p className="room-lookup-destination">{destination}</p>
+            <p className="reference-status">Older evacuation reference · Current plan unverified</p>
+            <p className="room-lookup-destination">{referenceSummary(evacuation)}</p>
+            {evacuation.status === "mapped" && <p className="map-help">{evacuation.destination}</p>}
             <p className="map-help">{evacuation.note}</p>
             <p className="find-room-disclaimer">
-              Reference only. Follow current school staff directions during an emergency.
+              {referenceCaution}
             </p>
           </section>
           <section

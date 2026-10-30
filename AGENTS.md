@@ -36,7 +36,7 @@ GunnMap/
 - `web/src/app/` contains the React bootstrap, route table, and persistent navigation shell. `web/src/pages/` contains the four route pages; reusable schedule, room, map, and evacuation behavior belongs under `web/src/features/`; shared controls and notifications belong in `web/src/shared/`.
 - `src/domain/room-matching.ts` contains room identity matching shared by the browser and Node server. Keep cross-runtime domain rules outside `web/src/`.
 - `web/index.html` is the shared SPA shell. Vite builds the browser entry from `web/src/app/main.tsx` into `dist/web/main.js` and `dist/web/ui.css`; the server returns the same shell for `/`, `/evacuation`, `/find-room`, and `/generate-map`.
-- `src/evacuation.ts` and `src/data/evacuation_data.json` keep evacuation assignments unconfirmed until a verified plan for the 2026 map is available.
+- `src/evacuation.ts` and `src/data/evacuation_data.json` match explicitly printed room groups in the restored user-supplied evacuation reference. These matches do not verify a current school plan; preserve its unknown revision and verification dates.
 - `src/project.ts` loads the inventory and resolves room IDs and aliases.
 - `src/schedule_preview.ts` renders the example schedule; `src/build_n_map.ts` refreshes the working map from the clean September 2026 PNG, which already includes the N-building second floor.
 - `src/data/room_regions.json` contains selectable room polygons; `src/data/room_index.csv` is the human-readable index. `src/data/building_regions.json` contains building-level polygons.
@@ -58,14 +58,17 @@ GunnMap/
 - Render requests must pass JSON and same-origin checks, bounded admission and storage reservations before expensive work. Do not trust forwarded client headers implicitly or bypass the generated-image store in HTTP routes.
 - Keep browser scripts compatible with the server CSP. Public API/image fetches omit credentials; JavaScript-readable schedule cookies use Secure on HTTPS while localhost development remains usable.
 - Use v2 draft/template cookies and keep legacy cookies read-only. Temporary shared schedules must stay separate from the local draft until explicitly saved.
-- Do not infer evacuation routes or destinations from the September 2026 site map. All room assignments remain unconfirmed until a current school evacuation plan is verified.
+- Do not infer evacuation routes or destinations from the September 2026 site map. Show historical reference groups only when the supplied image explicitly includes the room. Keep unsupported or renumbered rooms unconfirmed, and label reference matches as unverified for the current campus.
+- Keep the original 1852 × 1156 evacuation reference separate from the 2448 × 1584 campus map. Current classroom markers belong on the campus map; never position them over the reference image using campus coordinates. Preserve the original reference PNG rather than using an AI redraw.
 - Put temporary renders in `output/` or a temporary directory; commit only deliberate `demo_*.png` or `demo_*.webp` files for documentation.
 
 ## GitHub account and main branch
 
+- Before any GitHub write, verify the authenticated account with `gh api user --jq .login`. Use the account explicitly requested by the user; do not infer it from the commit author or a remote URL.
 - For requests involving a pull request (for example, “help me create PR”), merging, or changing `main`, check the currently authenticated GitHub account with `gh api user --jq .login` before taking any action that would merge into or directly update `main`.
 - Only merge a pull request into `main` or push changes directly to `main` when that command returns exactly `Ijustneedanid` or `XmCCC-glitch`. Check again immediately before the merge or push; a Git commit author, email address, or remote URL is not proof of the authenticated account.
 - If the account cannot be verified or does not match either allowed login, do not merge or push to `main`. Explain the result to the user and leave any prepared pull request open for an authorized account to merge.
+- After creating a pull request, post a separate comment containing exactly `@codex review`.
 
 ## Verification
 
