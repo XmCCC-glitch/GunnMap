@@ -280,7 +280,7 @@ export function createApp(outputDir = resolve(ROOT, 'output'), options: AppOptio
         '/map.webp': ['dist/web/map.webp', 'image/webp'],
         '/evacuation-map.webp': ['dist/web/evacuation-map.webp', 'image/webp'],
         '/map.png': ['src/map/gunn_site_map.png', 'image/png'],
-        '/evacuation-map.png': ['src/map/gunn_site_map.png', 'image/png'],
+        '/evacuation-map.png': ['src/map/gunn_evacuation_map.png', 'image/png'],
       };
 
       let file = files[pathname];
